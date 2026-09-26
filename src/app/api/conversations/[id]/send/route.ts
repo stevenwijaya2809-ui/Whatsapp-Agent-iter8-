@@ -1,10 +1,10 @@
 import type { NextRequest } from "next/server";
-import { getConversation, isUuid, saveMessage } from "@/lib/conversations";
+import { clearDraft, getConversation, isUuid, saveMessage } from "@/lib/conversations";
 import { errorResponse } from "@/lib/http";
 import type { Conversation } from "@/lib/types";
 import { sendWhatsAppMessage } from "@/lib/whatsapp";
 
-/** Sends a manual reply from the dashboard to the customer on WhatsApp, then stores it. */
+/** Sends a reply from the dashboard to the customer on WhatsApp, then stores it. */
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   if (!isUuid(id)) return errorResponse("Conversation not found", 404);
@@ -28,14 +28,19 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     return errorResponse(error, 502);
   }
 
+  // Approving the AI's draft unchanged stays credited to the AI; editing it makes it yours
+  const sentBy = conversation.draft_reply?.trim() === text ? "ai" : "human";
+
   try {
     const message = await saveMessage({
       conversationId: id,
       role: "assistant",
-      sentBy: "human",
+      sentBy,
       content: text,
       whatsappMsgId,
+      status: "sent",
     });
+    if (conversation.draft_reply) await clearDraft(id);
     return Response.json(message);
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);

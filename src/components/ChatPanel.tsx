@@ -6,14 +6,23 @@ import { MODE_STYLES } from "@/components/mode";
 import { formatDayLabel, formatTime, isSameDay } from "@/lib/format";
 import type { Conversation, ConversationMode, Message } from "@/lib/types";
 
+const MODES: ConversationMode[] = ["agent", "draft", "human"];
+
+/** WhatsApp only accepts free-form replies within 24 hours of the customer's last message. */
+const REPLY_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+const WINDOW_CLOSED_HINT =
+  "WhatsApp rejects free-form replies more than 24 hours after the customer's last message. Anything sent now will fail until they write again.";
+
 interface ChatPanelProps {
   conversation: Conversation;
   messages: Message[];
   loading: boolean;
   onBack: () => void;
   onModeChange: (mode: ConversationMode) => void;
-  /** Sends a manual message. Resolves to an error message, or null on success. */
+  /** Sends a message. Resolves to an error message, or null on success. */
   onSend: (text: string) => Promise<string | null>;
+  onDiscardDraft: () => void;
   className?: string;
 }
 
@@ -24,19 +33,31 @@ export function ChatPanel({
   onBack,
   onModeChange,
   onSend,
+  onDiscardDraft,
   className = "",
 }: ChatPanelProps) {
   const mode = MODE_STYLES[conversation.mode];
   const scrollerRef = useRef<HTMLDivElement>(null);
+  const [prefill, setPrefill] = useState<{ text: string; key: number }>({ text: "", key: 0 });
+  const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
     const scroller = scrollerRef.current;
     if (scroller) scroller.scrollTop = scroller.scrollHeight;
-  }, [messages]);
+  }, [messages, conversation.draft_reply]);
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const lastCustomerMessage = [...messages].reverse().find((message) => message.role === "user");
+  const windowEndsAt = lastCustomerMessage ? Date.parse(lastCustomerMessage.created_at) + REPLY_WINDOW_MS : null;
+  const windowClosed = windowEndsAt !== null && windowEndsAt <= now;
 
   return (
     <section className={`flex min-w-0 flex-col ${className}`}>
-      <header className="flex items-center gap-3 border-b border-white/[0.06] bg-[#141414] px-4 py-3 md:px-6">
+      <header className="flex flex-wrap items-center gap-3 border-b border-white/[0.06] bg-[#141414] px-4 py-3 md:px-6">
         <button
           type="button"
           onClick={onBack}
@@ -58,7 +79,18 @@ export function ChatPanel({
         </div>
         <ModeToggle mode={conversation.mode} onChange={onModeChange} />
       </header>
-      <p className={`px-4 py-1.5 text-center text-[11px] md:px-6 ${mode.hintStyle}`}>{mode.hint}</p>
+
+      <div className={`flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 py-1.5 text-[11px] md:px-6 ${mode.hintStyle}`}>
+        <span>{mode.hint}</span>
+        {windowEndsAt !== null && (
+          <span
+            className={windowClosed ? "font-medium text-orange-300" : "text-white/40"}
+            title={windowClosed ? WINDOW_CLOSED_HINT : undefined}
+          >
+            {windowClosed ? "Reply window closed" : `Reply window: ${formatRemaining(windowEndsAt - now)} left`}
+          </span>
+        )}
+      </div>
 
       <div ref={scrollerRef} className="flex-1 space-y-2 overflow-y-auto px-4 py-5 md:px-6">
         {messages.length === 0 ? (
@@ -79,15 +111,37 @@ export function ChatPanel({
         )}
       </div>
 
-      <Composer mode={conversation.mode} onSend={onSend} />
+      {conversation.draft_reply && (
+        <DraftCard
+          draft={conversation.draft_reply}
+          createdAt={conversation.draft_created_at}
+          onSend={onSend}
+          onEdit={(text) => setPrefill((current) => ({ text, key: current.key + 1 }))}
+          onDiscard={onDiscardDraft}
+        />
+      )}
+
+      <Composer
+        key={prefill.key}
+        defaultText={prefill.text}
+        mode={conversation.mode}
+        windowClosed={windowClosed}
+        onSend={onSend}
+      />
     </section>
   );
+}
+
+function formatRemaining(ms: number): string {
+  const hours = Math.floor(ms / 3_600_000);
+  const minutes = Math.floor((ms % 3_600_000) / 60_000);
+  return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
 }
 
 function ModeToggle({ mode, onChange }: { mode: ConversationMode; onChange: (mode: ConversationMode) => void }) {
   return (
     <div role="group" aria-label="Reply mode" className="flex shrink-0 rounded-lg border border-white/10 bg-white/[0.04] p-0.5 text-xs font-medium">
-      {(["agent", "human"] as const).map((option) => {
+      {MODES.map((option) => {
         const active = option === mode;
         const style = MODE_STYLES[option];
         return (
@@ -111,9 +165,78 @@ function ModeToggle({ mode, onChange }: { mode: ConversationMode; onChange: (mod
   );
 }
 
+interface DraftCardProps {
+  draft: string;
+  createdAt: string | null;
+  onSend: (text: string) => Promise<string | null>;
+  onEdit: (text: string) => void;
+  onDiscard: () => void;
+}
+
+function DraftCard({ draft, createdAt, onSend, onEdit, onDiscard }: DraftCardProps) {
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function approve() {
+    setSending(true);
+    setError(null);
+    const sendError = await onSend(draft);
+    setSending(false);
+    if (sendError) setError(sendError);
+  }
+
+  return (
+    <div className="border-t border-sky-500/20 bg-sky-500/[0.06] px-4 py-3 md:px-6">
+      <p className="mb-2 flex items-center gap-2 text-[11px] font-medium text-sky-300">
+        <span className="h-1.5 w-1.5 rounded-full bg-sky-400" />
+        Suggested reply, waiting for you
+        {createdAt && <span className="font-normal text-sky-300/50">· {formatTime(createdAt)}</span>}
+      </p>
+      <p className="text-sm leading-relaxed break-words whitespace-pre-wrap text-white/85">{draft}</p>
+      {error && (
+        <p role="alert" className="mt-2 text-xs text-red-400">
+          {error}
+        </p>
+      )}
+      <div className="mt-3 flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={approve}
+          disabled={sending}
+          className="rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          {sending ? "Sending…" : "Approve and send"}
+        </button>
+        <button
+          type="button"
+          onClick={() => onEdit(draft)}
+          className="rounded-lg border border-white/10 px-3 py-1.5 text-xs font-medium text-white/70 transition-colors hover:bg-white/[0.06] hover:text-white"
+        >
+          Edit first
+        </button>
+        <button
+          type="button"
+          onClick={onDiscard}
+          className="rounded-lg px-3 py-1.5 text-xs font-medium text-white/40 transition-colors hover:text-white/70"
+        >
+          Discard
+        </button>
+      </div>
+    </div>
+  );
+}
+
+const STATUS_LABELS = {
+  sent: { glyph: "✓", title: "Sent to WhatsApp", className: "" },
+  delivered: { glyph: "✓✓", title: "Delivered", className: "" },
+  read: { glyph: "✓✓", title: "Read", className: "text-sky-300" },
+  failed: { glyph: "⚠", title: "Not delivered", className: "text-red-300" },
+};
+
 function MessageBubble({ message }: { message: Message }) {
   const fromCustomer = message.role === "user";
   const byHuman = message.sent_by === "human";
+  const status = message.status ? STATUS_LABELS[message.status] : null;
   const bubble = fromCustomer
     ? "rounded-tl-sm border border-white/[0.06] bg-white/[0.07] text-white/90"
     : byHuman
@@ -122,22 +245,50 @@ function MessageBubble({ message }: { message: Message }) {
 
   return (
     <div className={`flex ${fromCustomer ? "justify-start" : "justify-end"}`}>
-      <div className={`max-w-[85%] rounded-2xl px-3.5 py-2 text-sm leading-relaxed md:max-w-[65%] ${bubble}`}>
-        <p className="break-words whitespace-pre-wrap">{message.content}</p>
-        <p className={`mt-1 text-right text-[10px] ${fromCustomer ? "text-white/35" : "text-white/80"}`}>
-          {!fromCustomer && <span className="font-medium">{byHuman ? "You" : "AI"} · </span>}
-          {formatTime(message.created_at)}
-        </p>
+      <div className="max-w-[85%] md:max-w-[65%]">
+        <div className={`rounded-2xl px-3.5 py-2 text-sm leading-relaxed ${bubble}`}>
+          <p className="break-words whitespace-pre-wrap">{message.content}</p>
+          <p className={`mt-1 text-right text-[10px] ${fromCustomer ? "text-white/35" : "text-white/80"}`}>
+            {!fromCustomer && <span className="font-medium">{byHuman ? "You" : "AI"} · </span>}
+            {formatTime(message.created_at)}
+            {status && (
+              <span className={`ml-1 ${status.className}`} title={message.status_detail ?? status.title}>
+                {status.glyph}
+              </span>
+            )}
+          </p>
+        </div>
+        {message.status === "failed" && (
+          <p className="mt-1 px-1 text-right text-[10px] text-red-300">
+            {message.status_detail ?? "WhatsApp could not deliver this message"}
+          </p>
+        )}
       </div>
     </div>
   );
 }
 
-function Composer({ mode, onSend }: { mode: ConversationMode; onSend: (text: string) => Promise<string | null> }) {
-  const [text, setText] = useState("");
+interface ComposerProps {
+  defaultText: string;
+  mode: ConversationMode;
+  windowClosed: boolean;
+  onSend: (text: string) => Promise<string | null>;
+}
+
+function Composer({ defaultText, mode, windowClosed, onSend }: ComposerProps) {
+  const [text, setText] = useState(defaultText);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea || !defaultText) return;
+    textarea.focus();
+    textarea.setSelectionRange(defaultText.length, defaultText.length);
+    textarea.style.height = "auto";
+    textarea.style.height = `${Math.min(textarea.scrollHeight, 160)}px`;
+  }, [defaultText]);
 
   function resize() {
     const textarea = textareaRef.current;
@@ -170,6 +321,12 @@ function Composer({ mode, onSend }: { mode: ConversationMode; onSend: (text: str
     }
   }
 
+  const placeholder = windowClosed
+    ? "The 24 hour reply window has closed…"
+    : mode === "agent"
+      ? "Send a message yourself (the AI is also replying)…"
+      : "Type a reply…";
+
   return (
     <div className="border-t border-white/[0.06] bg-[#141414] px-4 py-3 md:px-6">
       {error && (
@@ -188,7 +345,7 @@ function Composer({ mode, onSend }: { mode: ConversationMode; onSend: (text: str
           }}
           onKeyDown={handleKeyDown}
           aria-label="Message"
-          placeholder={mode === "human" ? "Type a reply…" : "Send a manual message (the AI is also replying)…"}
+          placeholder={placeholder}
           className="max-h-40 flex-1 resize-none bg-transparent py-1.5 text-sm text-white/90 placeholder:text-white/25 focus:outline-none"
         />
         <button

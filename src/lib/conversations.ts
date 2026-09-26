@@ -8,10 +8,14 @@ import type {
   Message,
   MessageRole,
   MessageSender,
+  MessageStatus,
 } from "@/lib/types";
 
 /** Postgres unique_violation, raised when Meta redelivers a message that is already stored. */
 const UNIQUE_VIOLATION = "23505";
+
+/** Delivery reports can arrive out of order, so a message never moves backwards. */
+const STATUS_RANK: Record<MessageStatus, number> = { sent: 1, delivered: 2, read: 3, failed: 4 };
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -52,11 +56,10 @@ export async function upsertConversation(phone: string, name: string | null): Pr
   return data;
 }
 
+type ConversationChanges = Partial<Pick<Conversation, "mode" | "last_read_at" | "draft_reply" | "draft_created_at">>;
+
 /** Applies changes to a conversation. Returns null if it doesn't exist. */
-export async function updateConversation(
-  id: string,
-  changes: Partial<Pick<Conversation, "mode" | "last_read_at">>
-): Promise<Conversation | null> {
+export async function updateConversation(id: string, changes: ConversationChanges): Promise<Conversation | null> {
   const { data, error } = await getSupabase()
     .from("conversations")
     .update(changes)
@@ -66,8 +69,52 @@ export async function updateConversation(
   if (error) throw new Error(`Failed to update conversation: ${error.message}`);
 
   // Marking as read is not worth a ping, and pinging on it would make dashboards loop
-  if (data && changes.mode !== undefined) await notifyDashboard(id);
+  if (data && (changes.mode !== undefined || changes.draft_reply !== undefined)) await notifyDashboard(id);
   return data;
+}
+
+/** Stores the reply the AI prepared in draft mode, for a human to approve. */
+export async function saveDraft(conversationId: string, reply: string): Promise<void> {
+  const { error } = await getSupabase()
+    .from("conversations")
+    .update({ draft_reply: reply, draft_created_at: new Date().toISOString() })
+    .eq("id", conversationId);
+  if (error) throw new Error(`Failed to save draft: ${error.message}`);
+  await notifyDashboard(conversationId);
+}
+
+/** Clears a pending draft once it has been sent, replaced or discarded. */
+export async function clearDraft(conversationId: string): Promise<void> {
+  const { error } = await getSupabase()
+    .from("conversations")
+    .update({ draft_reply: null, draft_created_at: null })
+    .eq("id", conversationId);
+  if (error) console.error("Failed to clear draft:", error.message);
+}
+
+/**
+ * Applies one of Meta's delivery reports to the message it refers to, ignoring reports
+ * that would move a message backwards. Returns the conversation it belongs to, or null
+ * when nothing was updated.
+ */
+export async function updateMessageStatus(
+  whatsappMsgId: string,
+  status: MessageStatus,
+  detail: string | null
+): Promise<string | null> {
+  const earlier = Object.keys(STATUS_RANK).filter((s) => STATUS_RANK[s as MessageStatus] < STATUS_RANK[status]);
+  let query = getSupabase()
+    .from("messages")
+    .update({ status, status_detail: detail, status_updated_at: new Date().toISOString() })
+    .eq("whatsapp_msg_id", whatsappMsgId);
+  query = earlier.length ? query.or(`status.is.null,status.in.(${earlier.join(",")})`) : query.is("status", null);
+
+  const { data, error } = await query.select("conversation_id").maybeSingle();
+  if (error) throw new Error(`Failed to update message status: ${error.message}`);
+  if (!data) return null;
+
+  await notifyDashboard(data.conversation_id);
+  return data.conversation_id;
 }
 
 /** The latest messages of a conversation, returned oldest first. */
@@ -88,6 +135,7 @@ interface NewMessage {
   content: string;
   sentBy?: MessageSender;
   whatsappMsgId?: string | null;
+  status?: MessageStatus;
 }
 
 /**
@@ -101,6 +149,7 @@ export async function saveMessage({
   content,
   sentBy,
   whatsappMsgId,
+  status,
 }: NewMessage): Promise<Message | null> {
   const supabase = getSupabase();
   const { data, error } = await supabase
@@ -111,6 +160,7 @@ export async function saveMessage({
       content,
       whatsapp_msg_id: whatsappMsgId ?? null,
       ...(sentBy && { sent_by: sentBy }),
+      ...(status && { status, status_updated_at: new Date().toISOString() }),
     })
     .select()
     .single();

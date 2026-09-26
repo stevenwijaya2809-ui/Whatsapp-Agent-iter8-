@@ -170,6 +170,18 @@ export default function Dashboard() {
     }
   }
 
+  async function discardDraft(id: string) {
+    setConversations((current) =>
+      current.map((c) => (c.id === id ? { ...c, draft_reply: null, draft_created_at: null } : c))
+    );
+    try {
+      await api(`/api/conversations/${id}`, { method: "PATCH", body: { discardDraft: true } });
+    } catch (e) {
+      setError(`Couldn't discard the draft: ${errorMessage(e)}`);
+      scheduleRefresh();
+    }
+  }
+
   async function signOut() {
     try {
       await fetch("/api/auth/logout", { method: "POST" });
@@ -199,6 +211,7 @@ export default function Dashboard() {
           onBack={() => setSelectedId(null)}
           onModeChange={(mode) => changeMode(selected.id, mode)}
           onSend={(text) => sendMessage(selected.id, text)}
+          onDiscardDraft={() => discardDraft(selected.id)}
           className="flex-1"
         />
       ) : (

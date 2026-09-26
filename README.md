@@ -8,8 +8,8 @@ A full-stack WhatsApp AI agent built with Next.js. It receives messages through 
 User sends a WhatsApp message
   -> Meta forwards it to POST /api/webhook
   -> Message stored in Supabase; the webhook returns 200 immediately
-  -> In the background (Agent mode only): recent history is sent to the AI model (OpenRouter)
-  -> AI reply sent back via the Meta Graph API and stored in Supabase
+  -> In the background (Agent and Draft modes): recent history is sent to the AI model (OpenRouter)
+  -> Agent mode sends the reply via the Meta Graph API; Draft mode keeps it for approval
   -> Dashboard updates in real time (Supabase Realtime)
 ```
 
@@ -53,8 +53,8 @@ Next.js reads `.env.local`, not `.env.example`. Keep real credentials in `.env.l
 
 Run [`supabase-schema.sql`](supabase-schema.sql) in the Supabase SQL Editor (or apply it as a migration through the Supabase MCP server). It creates:
 
-- `conversations`: one row per WhatsApp contact, with `mode` (`agent` or `human`) and `last_read_at` for unread indicators
-- `messages`: every message, with `role` (`user` or `assistant`) and, for assistant messages, `sent_by` (`ai` or `human`)
+- `conversations`: one row per WhatsApp contact, with `mode` (`agent`, `draft` or `human`), a pending `draft_reply` awaiting approval, and `last_read_at` for unread indicators
+- `messages`: every message, with `role` (`user` or `assistant`), `sent_by` (`ai` or `human`) for assistant messages, and the delivery `status` Meta reported
 - Row Level Security with no policies for the public anon key, so conversations can only be reached through the signed-in dashboard. The server uses the service role key, which bypasses RLS
 
 The script is idempotent: it is safe to run again, and it upgrades databases created from the original schema.
@@ -85,11 +85,13 @@ ngrok http 3000
 ## How It Works
 
 - **Agent mode** (default): the AI replies to every new message automatically.
+- **Draft mode**: the AI writes the reply and waits. You approve, edit or discard it in the dashboard. Approving it unchanged keeps it labelled as the AI's; editing it makes the reply yours.
 - **Human mode**: incoming messages are stored but not answered; you reply from the dashboard. If you switch a conversation to Human mode while the AI is still generating, that reply is discarded.
-- **Manual messages** can be sent from the dashboard in both modes. They are stored as assistant messages with `sent_by = 'human'` and labeled "You".
+- **Manual messages** can be sent from the dashboard in any mode. They are stored as assistant messages with `sent_by = 'human'` and labeled "You".
 - **Reliable webhook**: incoming messages are stored before the webhook responds, so if the database is unavailable Meta retries the delivery. Redeliveries are ignored using the WhatsApp message ID. The AI reply runs after the response is sent (Next.js `after`), so Meta always gets a fast 200.
 - **AI context**: the model sees the last 20 messages plus the system prompt in [`src/lib/system-prompt.ts`](src/lib/system-prompt.ts). Markdown in replies is converted to WhatsApp formatting, and replies longer than WhatsApp's 4096-character limit are split.
 - **Non-text messages** (images, voice notes, locations, etc.) are stored as placeholders such as `[Image] caption`, so they show up in the dashboard and the AI knows something was sent.
+- **Delivery status**: Meta's reports (sent, delivered, read, failed) are stored against each message and shown as ticks. Meta rejects some messages only after accepting them, such as replies outside the 24-hour window, so this is the only way to see that a reply never arrived.
 
 ## API Routes
 
@@ -98,7 +100,7 @@ ngrok http 3000
 | GET | `/api/webhook` | Meta webhook verification |
 | POST | `/api/webhook` | Receive incoming WhatsApp messages |
 | GET | `/api/conversations` | List conversations with their latest message |
-| PATCH | `/api/conversations/[id]` | Update the mode (`{"mode": "human"}`) and/or mark as read (`{"read": true}`) |
+| PATCH | `/api/conversations/[id]` | Update the mode (`{"mode": "draft"}`), mark as read (`{"read": true}`) and/or drop a pending draft (`{"discardDraft": true}`) |
 | GET | `/api/conversations/[id]/messages` | The latest 500 messages of a conversation |
 | POST | `/api/conversations/[id]/send` | Send a manual message from the dashboard (`{"message": "..."}`) |
 | POST | `/api/auth/login` | Sign in with `{"password": "..."}` and receive the session cookie |
@@ -108,10 +110,12 @@ Every route except `/api/webhook` and the login routes needs a signed-in session
 
 ## Dashboard Features
 
-- **Sidebar:** conversations sorted by latest activity, with a mode badge (green Agent, orange Human), an unread dot for Human-mode conversations with new customer messages, and a live connection indicator
+- **Sidebar:** conversations sorted by latest activity, with a mode badge (green Agent, blue Draft, orange Human), an unread dot for Human-mode conversations with new customer messages, and a live connection indicator
 - **Chat panel:** WhatsApp-style bubbles labeled "AI" (green) or "You" (orange), with timestamps and day dividers
-- **Mode toggle:** switch between Agent and Human per conversation
-- **Message input:** available in both modes; Enter sends, Shift+Enter adds a new line, and WhatsApp API errors are shown inline
+- **Mode toggle:** switch between Agent, Draft and Human per conversation
+- **Draft approval:** in Draft mode the AI's suggested reply appears above the message box with Approve, Edit and Discard
+- **Delivery ticks and reply window:** each reply shows sent, delivered, read or failed (with Meta's reason), and the header counts down WhatsApp's 24-hour reply window
+- **Message input:** available in every mode; Enter sends, Shift+Enter adds a new line, and WhatsApp API errors are shown inline
 - **Real-time:** new messages appear instantly via Supabase Realtime, with a catch-up refresh after reconnecting
 - **Mobile:** the conversation list and chat are shown as separate screens on narrow displays
 

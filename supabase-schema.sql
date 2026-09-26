@@ -6,7 +6,11 @@ create table if not exists conversations (
   id uuid default gen_random_uuid() primary key,
   phone text unique not null,
   name text,
-  mode text not null default 'agent' check (mode in ('agent', 'human')),
+  -- agent: the AI replies by itself. draft: the AI prepares a reply for a human to approve. human: no AI.
+  mode text not null default 'agent' check (mode in ('agent', 'draft', 'human')),
+  -- Reply prepared in draft mode, waiting for approval in the dashboard
+  draft_reply text,
+  draft_created_at timestamp with time zone,
   last_read_at timestamp with time zone,
   updated_at timestamp with time zone default now(),
   created_at timestamp with time zone default now()
@@ -20,12 +24,23 @@ create table if not exists messages (
   sent_by text check (sent_by in ('ai', 'human')),
   content text not null,
   whatsapp_msg_id text unique,
+  -- Delivery state Meta reports for messages we sent
+  status text check (status in ('sent', 'delivered', 'read', 'failed')),
+  status_detail text,
+  status_updated_at timestamp with time zone,
   created_at timestamp with time zone default now()
 );
 
--- Columns added after the original schema
+-- Columns and constraints added after earlier versions of this schema
 alter table conversations add column if not exists last_read_at timestamp with time zone;
+alter table conversations add column if not exists draft_reply text;
+alter table conversations add column if not exists draft_created_at timestamp with time zone;
+alter table conversations drop constraint if exists conversations_mode_check;
+alter table conversations add constraint conversations_mode_check check (mode in ('agent', 'draft', 'human'));
 alter table messages add column if not exists sent_by text check (sent_by in ('ai', 'human'));
+alter table messages add column if not exists status text check (status in ('sent', 'delivered', 'read', 'failed'));
+alter table messages add column if not exists status_detail text;
+alter table messages add column if not exists status_updated_at timestamp with time zone;
 
 create index if not exists idx_messages_conversation on messages(conversation_id);
 create index if not exists idx_conversations_updated on conversations(updated_at desc);

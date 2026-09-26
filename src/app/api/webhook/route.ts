@@ -1,7 +1,14 @@
 import { after, type NextRequest } from "next/server";
 import { generateReply } from "@/lib/ai";
-import { getConversation, getRecentMessages, saveMessage, upsertConversation } from "@/lib/conversations";
-import { parseWebhookPayload, verifySignature, type WebhookPayload } from "@/lib/webhook";
+import {
+  getConversation,
+  getRecentMessages,
+  saveDraft,
+  saveMessage,
+  updateMessageStatus,
+  upsertConversation,
+} from "@/lib/conversations";
+import { parseStatusUpdates, parseWebhookPayload, verifySignature, type WebhookPayload } from "@/lib/webhook";
 import { sendWhatsAppMessage } from "@/lib/whatsapp";
 import { toWhatsAppFormat } from "@/lib/whatsapp-text";
 
@@ -52,7 +59,7 @@ export async function POST(request: NextRequest) {
         content: message.text,
         whatsappMsgId: message.id,
       });
-      if (saved && conversation.mode === "agent") needsReply.set(conversation.id, conversation.phone);
+      if (saved && conversation.mode !== "human") needsReply.set(conversation.id, conversation.phone);
     } catch (error) {
       console.error("[webhook] Failed to store incoming message:", error);
       storeFailed = true;
@@ -60,12 +67,20 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // Reply after the response is sent, so Meta gets its 200 well within its 5 second timeout.
-  // One reply per conversation covers every message stored above.
-  if (needsReply.size > 0) {
+  // Delivery reports and AI replies run after the response, so Meta gets its 200 well
+  // within its 5 second timeout. One reply per conversation covers every message stored above.
+  const statusUpdates = parseStatusUpdates(payload);
+  if (statusUpdates.length > 0 || needsReply.size > 0) {
     after(async () => {
+      for (const update of statusUpdates) {
+        try {
+          await updateMessageStatus(update.messageId, update.status, update.detail);
+        } catch (error) {
+          console.error("[webhook] Failed to record delivery status:", error);
+        }
+      }
       for (const [conversationId, phone] of needsReply) {
-        await replyWithAI(conversationId, phone);
+        await prepareReply(conversationId, phone);
       }
     });
   }
@@ -74,19 +89,31 @@ export async function POST(request: NextRequest) {
   return Response.json({ status: "ok" });
 }
 
-async function replyWithAI(conversationId: string, phone: string) {
+/** Writes the AI's reply, then either sends it (agent mode) or leaves it for approval (draft mode). */
+async function prepareReply(conversationId: string, phone: string) {
   try {
     const history = await getRecentMessages(conversationId, HISTORY_LIMIT);
     const completion = await generateReply(history.map(({ role, content }) => ({ role, content })));
     const reply = toWhatsAppFormat(completion) || FALLBACK_REPLY;
 
-    // An operator may have switched the conversation to human mode while the model was generating
+    // The operator may have changed the mode while the model was generating
     const conversation = await getConversation(conversationId);
+    if (conversation?.mode === "draft") {
+      await saveDraft(conversationId, reply);
+      return;
+    }
     if (conversation?.mode !== "agent") return;
 
     const whatsappMsgId = await sendWhatsAppMessage(phone, reply);
-    await saveMessage({ conversationId, role: "assistant", sentBy: "ai", content: reply, whatsappMsgId });
+    await saveMessage({
+      conversationId,
+      role: "assistant",
+      sentBy: "ai",
+      content: reply,
+      whatsappMsgId,
+      status: "sent",
+    });
   } catch (error) {
-    console.error(`[webhook] Failed to send AI reply for conversation ${conversationId}:`, error);
+    console.error(`[webhook] Failed to prepare AI reply for conversation ${conversationId}:`, error);
   }
 }

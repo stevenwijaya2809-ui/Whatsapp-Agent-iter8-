@@ -11,6 +11,17 @@ export interface IncomingMessage {
   text: string;
 }
 
+/** Delivery report for a message we sent. Mirrors MessageStatus in lib/types. */
+export interface StatusUpdate {
+  /** WhatsApp ID of the message the report is about */
+  messageId: string;
+  status: "sent" | "delivered" | "read" | "failed";
+  /** Why a failed message failed, when Meta says */
+  detail: string | null;
+}
+
+const DELIVERY_STATUSES = new Set(["sent", "delivered", "read", "failed"]);
+
 interface WebhookMessage {
   id: string;
   from: string;
@@ -24,6 +35,21 @@ interface WebhookMessage {
   location?: { latitude?: number; longitude?: number; name?: string; address?: string };
 }
 
+interface WebhookError {
+  code?: number;
+  title?: string;
+  message?: string;
+  error_data?: { details?: string };
+}
+
+interface WebhookStatus {
+  id?: string;
+  status?: string;
+  timestamp?: string;
+  recipient_id?: string;
+  errors?: WebhookError[];
+}
+
 export interface WebhookPayload {
   object?: string;
   entry?: {
@@ -33,6 +59,7 @@ export interface WebhookPayload {
         metadata?: { phone_number_id?: string };
         contacts?: { wa_id?: string; profile?: { name?: string } }[];
         messages?: WebhookMessage[];
+        statuses?: WebhookStatus[];
       };
     }[];
   }[];
@@ -49,9 +76,9 @@ export function verifySignature(rawBody: Buffer, signatureHeader: string | null,
 }
 
 /**
- * Extracts customer messages from a webhook payload. Status updates (sent, delivered, read)
- * and events with nothing to show, such as reactions, are skipped. When `phoneNumberId` is
- * given, messages sent to other phone numbers on the same WhatsApp Business Account are ignored.
+ * Extracts customer messages from a webhook payload. Delivery reports and events with
+ * nothing to show, such as reactions, are skipped. When `phoneNumberId` is given,
+ * messages sent to other phone numbers on the same WhatsApp Business Account are ignored.
  */
 export function parseWebhookPayload(payload: WebhookPayload | null, phoneNumberId?: string): IncomingMessage[] {
   if (payload?.object !== "whatsapp_business_account") return [];
@@ -76,6 +103,39 @@ export function parseWebhookPayload(payload: WebhookPayload | null, phoneNumberI
     }
   }
   return messages;
+}
+
+/**
+ * Extracts delivery reports (sent, delivered, read, failed) for messages we sent.
+ * Meta reports some failures here rather than when the message is accepted, so this is
+ * the only way to know a reply never arrived.
+ */
+export function parseStatusUpdates(payload: WebhookPayload | null): StatusUpdate[] {
+  if (payload?.object !== "whatsapp_business_account") return [];
+
+  const updates: StatusUpdate[] = [];
+  for (const entry of payload.entry ?? []) {
+    for (const change of entry.changes ?? []) {
+      for (const status of change.value?.statuses ?? []) {
+        if (!status.id || !status.status || !DELIVERY_STATUSES.has(status.status)) continue;
+        updates.push({
+          messageId: status.id,
+          status: status.status as StatusUpdate["status"],
+          detail: describeError(status.errors),
+        });
+      }
+    }
+  }
+  return updates;
+}
+
+function describeError(errors: WebhookError[] | undefined): string | null {
+  const error = errors?.[0];
+  if (!error) return null;
+
+  const text = error.error_data?.details || error.message || error.title;
+  if (!text) return null;
+  return error.code ? `${text} (error ${error.code})` : text;
 }
 
 /** Text to store for a message. Non-text messages get a placeholder such as "[Image] caption". */
