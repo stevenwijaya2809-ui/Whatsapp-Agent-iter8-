@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ChatPanel } from "@/components/ChatPanel";
 import { ConversationList, type RealtimeStatus } from "@/components/ConversationList";
+import { ResultsSummary } from "@/components/ResultsSummary";
 import { DASHBOARD_CHANNEL, DASHBOARD_EVENT } from "@/lib/realtime-channel";
 import { getBrowserSupabase, isRealtimeConfigured } from "@/lib/supabase-browser";
 import type { ConversationMode, ConversationWithLastMessage, Message } from "@/lib/types";
@@ -215,17 +216,7 @@ export default function Dashboard() {
           className="flex-1"
         />
       ) : (
-        <div className="hidden flex-1 flex-col items-center justify-center gap-4 md:flex">
-          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white/5">
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.2)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-            </svg>
-          </div>
-          <div className="text-center">
-            <p className="text-sm font-medium text-white/40">Select a conversation</p>
-            <p className="mt-1 text-xs text-white/20">Choose a chat from the list to read and reply</p>
-          </div>
-        </div>
+        <ResultsSummary className="hidden flex-1 md:block" />
       )}
 
       {error && (
