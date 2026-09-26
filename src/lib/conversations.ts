@@ -1,4 +1,6 @@
 import "server-only";
+import { ensureCustomer } from "@/lib/customers";
+import { DEFAULT_ORGANIZATION_ID } from "@/lib/organization";
 import { notifyDashboard } from "@/lib/realtime";
 import { getSupabase } from "@/lib/supabase";
 import type {
@@ -45,11 +47,23 @@ export async function getConversation(id: string): Promise<Conversation | null> 
   return data;
 }
 
-/** Returns the conversation for a phone number, creating it on first contact and keeping the name current. */
+/**
+ * Returns the conversation for a phone number, creating it on first contact, keeping the
+ * name current, and making sure it is attached to a customer record.
+ */
 export async function upsertConversation(phone: string, name: string | null): Promise<Conversation> {
+  const customer = await ensureCustomer(phone, name);
   const { data, error } = await getSupabase()
     .from("conversations")
-    .upsert(name ? { phone, name } : { phone }, { onConflict: "phone" })
+    .upsert(
+      {
+        phone,
+        ...(name ? { name } : {}),
+        organization_id: DEFAULT_ORGANIZATION_ID,
+        customer_id: customer.id,
+      },
+      { onConflict: "phone" }
+    )
     .select()
     .single();
   if (error) throw new Error(`Failed to save conversation: ${error.message}`);

@@ -1,5 +1,6 @@
 import { after, type NextRequest } from "next/server";
 import { generateReply } from "@/lib/ai";
+import { getCustomer } from "@/lib/customers";
 import {
   getConversation,
   getRecentMessages,
@@ -92,17 +93,28 @@ export async function POST(request: NextRequest) {
 /** Writes the AI's reply, then either sends it (agent mode) or leaves it for approval (draft mode). */
 async function prepareReply(conversationId: string, phone: string) {
   try {
-    const history = await getRecentMessages(conversationId, HISTORY_LIMIT);
-    const completion = await generateReply(history.map(({ role, content }) => ({ role, content })));
-    const reply = toWhatsAppFormat(completion) || FALLBACK_REPLY;
+    const [history, conversation] = await Promise.all([
+      getRecentMessages(conversationId, HISTORY_LIMIT),
+      getConversation(conversationId),
+    ]);
+    const customer = conversation?.customer_id ? await getCustomer(conversation.customer_id) : null;
+
+    const completion = await generateReply({
+      history: history.map(({ role, content }) => ({ role, content })),
+      customer,
+    });
+    const reply = toWhatsAppFormat(completion.text) || FALLBACK_REPLY;
+    if (completion.knowledgeMiss) {
+      console.warn(`[webhook] No knowledge matched the question in conversation ${conversationId}`);
+    }
 
     // The operator may have changed the mode while the model was generating
-    const conversation = await getConversation(conversationId);
-    if (conversation?.mode === "draft") {
+    const current = await getConversation(conversationId);
+    if (current?.mode === "draft") {
       await saveDraft(conversationId, reply);
       return;
     }
-    if (conversation?.mode !== "agent") return;
+    if (current?.mode !== "agent") return;
 
     const whatsappMsgId = await sendWhatsAppMessage(phone, reply);
     await saveMessage({

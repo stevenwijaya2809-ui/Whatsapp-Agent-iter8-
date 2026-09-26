@@ -1,8 +1,10 @@
 import "server-only";
 import OpenAI from "openai";
+import { assembleSystemPrompt } from "@/lib/ai/prompt/assemble";
 import { requireEnv } from "@/lib/env";
-import { DENTIST_SYSTEM_PROMPT } from "@/lib/system-prompt";
-import type { MessageRole } from "@/lib/types";
+import { retrieveKnowledge } from "@/lib/knowledge";
+import { getOrganization } from "@/lib/organization";
+import type { Customer, MessageRole } from "@/lib/types";
 
 let client: OpenAI | null = null;
 
@@ -17,11 +19,39 @@ function getClient(): OpenAI {
   return client;
 }
 
-/** Generates the agent's next reply from the conversation history, oldest message first. */
-export async function generateReply(history: { role: MessageRole; content: string }[]): Promise<string> {
+export interface ReplyRequest {
+  /** Conversation history, oldest message first */
+  history: { role: MessageRole; content: string }[];
+  customer: Customer | null;
+}
+
+export interface ReplyResult {
+  text: string;
+  /** No knowledge entry matched the question, so the reply should have deferred rather than answered */
+  knowledgeMiss: boolean;
+  knowledgeUsed: number;
+}
+
+/**
+ * Generates the assistant's next reply. Business facts come from the knowledge base and the
+ * organization's settings, never from this file.
+ */
+export async function generateReply({ history, customer }: ReplyRequest): Promise<ReplyResult> {
+  const organization = await getOrganization();
+  const question = [...history].reverse().find((message) => message.role === "user")?.content ?? "";
+  const knowledge = await retrieveKnowledge(organization.id, question);
+
   const completion = await getClient().chat.completions.create({
     model: requireEnv("AI_MODEL"),
-    messages: [{ role: "system", content: DENTIST_SYSTEM_PROMPT }, ...history],
+    messages: [
+      { role: "system", content: assembleSystemPrompt({ organization, customer, knowledge }) },
+      ...history,
+    ],
   });
-  return completion.choices[0]?.message?.content ?? "";
+
+  return {
+    text: completion.choices[0]?.message?.content ?? "",
+    knowledgeMiss: knowledge.miss,
+    knowledgeUsed: knowledge.entries.length,
+  };
 }

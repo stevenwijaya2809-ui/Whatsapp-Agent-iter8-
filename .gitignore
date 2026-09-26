@@ -34,6 +34,9 @@ yarn-error.log*
 .env*
 !.env.example
 
+# database exports contain customer messages
+backups/
+
 # local tool config that can contain credentials
 .mcp.json
 .claude/settings.local.json

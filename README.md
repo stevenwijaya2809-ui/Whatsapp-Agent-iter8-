@@ -55,9 +55,15 @@ Run [`supabase-schema.sql`](supabase-schema.sql) in the Supabase SQL Editor (or 
 
 - `conversations`: one row per WhatsApp contact, with `mode` (`agent`, `draft` or `human`), a pending `draft_reply` awaiting approval, and `last_read_at` for unread indicators
 - `messages`: every message, with `role` (`user` or `assistant`), `sent_by` (`ai` or `human`) for assistant messages, and the delivery `status` Meta reported
+- `customers`: one record per phone number, with status, tags, notes and an AI summary; conversations belong to a customer
+- `kb_entries`, `events`, `tool_calls`, `appointments`, `message_analysis`: the knowledge base and the tables the AI layer writes to
 - Row Level Security with no policies for the public anon key, so conversations can only be reached through the signed-in dashboard. The server uses the service role key, which bypasses RLS
 
 The script is idempotent: it is safe to run again, and it upgrades databases created from the original schema.
+
+Incremental migrations live in [`supabase/migrations/`](supabase/migrations) and are applied in order; `supabase-schema.sql` is the base schema.
+
+There are no backups on Supabase's free plan, so run `node scripts/export-data.mjs` before schema changes.
 
 ### 4. Run the dev server
 
@@ -89,7 +95,8 @@ ngrok http 3000
 - **Human mode**: incoming messages are stored but not answered; you reply from the dashboard. If you switch a conversation to Human mode while the AI is still generating, that reply is discarded.
 - **Manual messages** can be sent from the dashboard in any mode. They are stored as assistant messages with `sent_by = 'human'` and labeled "You".
 - **Reliable webhook**: incoming messages are stored before the webhook responds, so if the database is unavailable Meta retries the delivery. Redeliveries are ignored using the WhatsApp message ID. The AI reply runs after the response is sent (Next.js `after`), so Meta always gets a fast 200.
-- **AI context**: the model sees the last 20 messages plus the system prompt in [`src/lib/system-prompt.ts`](src/lib/system-prompt.ts). Markdown in replies is converted to WhatsApp formatting, and replies longer than WhatsApp's 4096-character limit are split.
+- **AI context**: the system prompt is assembled per message from [`src/lib/ai/prompt/`](src/lib/ai/prompt) — core behaviour, the business profile, what is known about the customer, and the knowledge entries that match the question — plus the last 20 messages. Markdown in replies is converted to WhatsApp formatting, and replies longer than WhatsApp's 4096-character limit are split.
+- **Business knowledge**: opening hours, services, policies and FAQs live in the `kb_entries` table, not in code. The AI is told to answer only from what it retrieves and to offer to check rather than invent.
 - **Non-text messages** (images, voice notes, locations, etc.) are stored as placeholders such as `[Image] caption`, so they show up in the dashboard and the AI knows something was sent.
 - **Delivery status**: Meta's reports (sent, delivered, read, failed) are stored against each message and shown as ticks. Meta rejects some messages only after accepting them, such as replies outside the 24-hour window, so this is the only way to see that a reply never arrived.
 
@@ -126,6 +133,15 @@ Every route except `/api/webhook` and the login routes needs a signed-in session
 - **Meta's webhook stays public**, as it has to be. Set `WHATSAPP_APP_SECRET` so only requests signed by Meta are accepted.
 - **It is one shared password, not user accounts.** There is no per-user sign-in or audit trail. For several clinics or staff members, move to Supabase Auth with per-tenant access rules.
 - **Never commit credentials.** `.env.local` is gitignored; `.env.example` is meant to be committed, so keep it free of real values.
+
+## Development
+
+```bash
+npm run verify   # types, lint and unit tests
+npm test         # unit tests only
+```
+
+End-to-end scripts in [`scripts/e2e/`](scripts/e2e) run against a local dev server and the real database, and clean up after themselves.
 
 ## Deployment
 
