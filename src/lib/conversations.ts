@@ -1,4 +1,5 @@
 import "server-only";
+import type { ReplyAnalysis } from "@/lib/ai/analysis";
 import { ensureCustomer } from "@/lib/customers";
 import { DEFAULT_ORGANIZATION_ID } from "@/lib/organization";
 import { notifyDashboard } from "@/lib/realtime";
@@ -189,4 +190,50 @@ export async function saveMessage({
 
   await notifyDashboard(conversationId);
   return data;
+}
+
+/**
+ * Records what the model understood: the conversation keeps the latest reading for the inbox,
+ * and each analysed message keeps its own for quality reporting. A hand-over flag is only ever
+ * raised here, never cleared, so an operator stays in control once involved.
+ */
+export async function applyAnalysis(
+  conversationId: string,
+  messageId: string | null,
+  analysis: ReplyAnalysis
+): Promise<void> {
+  const supabase = getSupabase();
+
+  const { error } = await supabase
+    .from("conversations")
+    .update({
+      intent: analysis.intent,
+      sub_intent: analysis.subIntent,
+      sentiment: analysis.sentiment,
+      urgency: analysis.urgency,
+      ai_confidence: analysis.confidence,
+      ...(analysis.needsHuman
+        ? {
+            needs_human: true,
+            escalation_reason: analysis.escalationReason ?? "The assistant asked for a person",
+            escalated_at: new Date().toISOString(),
+          }
+        : {}),
+    })
+    .eq("id", conversationId);
+  if (error) console.error("Failed to record conversation analysis:", error.message);
+
+  if (!messageId) return;
+  const { error: analysisError } = await supabase.from("message_analysis").upsert(
+    {
+      message_id: messageId,
+      intent: analysis.intent,
+      sub_intent: analysis.subIntent,
+      sentiment: analysis.sentiment,
+      urgency: analysis.urgency,
+      confidence: analysis.confidence,
+    },
+    { onConflict: "message_id" }
+  );
+  if (analysisError) console.error("Failed to record message analysis:", analysisError.message);
 }

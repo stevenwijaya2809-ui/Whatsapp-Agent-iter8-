@@ -2,6 +2,7 @@ import { after, type NextRequest } from "next/server";
 import { generateReply } from "@/lib/ai";
 import { getCustomer } from "@/lib/customers";
 import {
+  applyAnalysis,
   getConversation,
   getRecentMessages,
   saveDraft,
@@ -106,6 +107,10 @@ async function prepareReply(conversationId: string, phone: string) {
     const reply = toWhatsAppFormat(completion.text) || FALLBACK_REPLY;
     if (completion.knowledgeMiss) {
       console.warn(`[webhook] No knowledge matched the question in conversation ${conversationId}`);
+    }
+    if (completion.analysis) {
+      const trigger = [...history].reverse().find((message) => message.role === "user");
+      await applyAnalysis(conversationId, trigger?.id ?? null, completion.analysis);
     }
 
     // The operator may have changed the mode while the model was generating

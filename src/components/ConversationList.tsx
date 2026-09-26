@@ -164,6 +164,14 @@ function ConversationItem({ conversation, selected, onSelect }: ConversationItem
             {last?.content ?? "No messages yet"}
           </p>
           <div className="flex shrink-0 items-center gap-1.5">
+            {conversation.needs_human && (
+              <span
+                className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-medium tracking-wide text-amber-300 uppercase"
+                title={conversation.escalation_reason ?? "Waiting for a person"}
+              >
+                Needs you
+              </span>
+            )}
             <span className={`rounded px-1.5 py-0.5 text-[9px] font-medium tracking-wide uppercase ${mode.badge}`}>
               {mode.label}
             </span>

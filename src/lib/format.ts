@@ -31,3 +31,9 @@ export function formatDayLabel(iso: string): string {
 export function isSameDay(a: string, b: string): boolean {
   return new Date(a).toDateString() === new Date(b).toDateString();
 }
+
+/** "OPERATING_HOURS" reads as "Operating hours" in the interface. */
+export function formatIntent(intent: string): string {
+  const words = intent.toLowerCase().split("_");
+  return words.map((word, i) => (i === 0 ? word.charAt(0).toUpperCase() + word.slice(1) : word)).join(" ");
+}

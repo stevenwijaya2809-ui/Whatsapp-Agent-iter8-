@@ -1,5 +1,6 @@
 import "server-only";
 import OpenAI from "openai";
+import { parseModelOutput, type ReplyAnalysis } from "@/lib/ai/analysis";
 import { assembleSystemPrompt } from "@/lib/ai/prompt/assemble";
 import { requireEnv } from "@/lib/env";
 import { retrieveKnowledge } from "@/lib/knowledge";
@@ -27,6 +28,8 @@ export interface ReplyRequest {
 
 export interface ReplyResult {
   text: string;
+  /** Null when the model ignored the JSON contract; the reply is still usable */
+  analysis: ReplyAnalysis | null;
   /** No knowledge entry matched the question, so the reply should have deferred rather than answered */
   knowledgeMiss: boolean;
   knowledgeUsed: number;
@@ -49,9 +52,6 @@ export async function generateReply({ history, customer }: ReplyRequest): Promis
     ],
   });
 
-  return {
-    text: completion.choices[0]?.message?.content ?? "",
-    knowledgeMiss: knowledge.miss,
-    knowledgeUsed: knowledge.entries.length,
-  };
+  const { text, analysis } = parseModelOutput(completion.choices[0]?.message?.content ?? "");
+  return { text, analysis, knowledgeMiss: knowledge.miss, knowledgeUsed: knowledge.entries.length };
 }

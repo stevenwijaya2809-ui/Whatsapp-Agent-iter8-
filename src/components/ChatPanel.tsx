@@ -3,7 +3,7 @@
 import { Fragment, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { Avatar } from "@/components/Avatar";
 import { MODE_STYLES } from "@/components/mode";
-import { formatDayLabel, formatTime, isSameDay } from "@/lib/format";
+import { formatDayLabel, formatIntent, formatTime, isSameDay } from "@/lib/format";
 import type { Conversation, ConversationMode, Message } from "@/lib/types";
 
 const MODES: ConversationMode[] = ["agent", "draft", "human"];
@@ -73,9 +73,23 @@ export function ChatPanel({
           <h2 className="truncate text-sm leading-tight font-semibold text-white">
             {conversation.name || `+${conversation.phone}`}
           </h2>
-          <p className="mt-0.5 truncate text-xs leading-tight text-white/40">
-            {conversation.name ? `+${conversation.phone}` : "WhatsApp contact"}
-          </p>
+          <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs leading-tight text-white/40">
+            <span className="truncate">{conversation.name ? `+${conversation.phone}` : "WhatsApp contact"}</span>
+            {conversation.intent && conversation.intent !== "UNKNOWN" && (
+              <span className="rounded bg-white/[0.06] px-1.5 py-0.5 text-[10px] text-white/60">
+                {formatIntent(conversation.intent)}
+                {conversation.ai_confidence !== null && ` · ${Math.round(conversation.ai_confidence * 100)}%`}
+              </span>
+            )}
+            {conversation.needs_human && (
+              <span
+                className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-300"
+                title={conversation.escalation_reason ?? undefined}
+              >
+                Needs a person
+              </span>
+            )}
+          </div>
         </div>
         <ModeToggle mode={conversation.mode} onChange={onModeChange} />
       </header>
