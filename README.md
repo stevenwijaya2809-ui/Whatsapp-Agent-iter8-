@@ -45,8 +45,9 @@ Next.js reads `.env.local`, not `.env.example`. Keep real credentials in `.env.l
 | `OPENROUTER_API_KEY` | Yes | API key from openrouter.ai |
 | `AI_MODEL` | Yes | OpenRouter model ID (e.g. `openai/gpt-4o-mini`) |
 | `NEXT_PUBLIC_SUPABASE_URL` | Yes | Supabase project URL |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Yes | Supabase anon key, used by the dashboard for Realtime |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Yes | Supabase anon key; the dashboard uses it only to receive update pings |
 | `SUPABASE_SERVICE_ROLE_KEY` | Yes | Supabase service role key, used by the server only |
+| `DASHBOARD_PASSWORD` | Yes | Password for signing in to the dashboard. In production the dashboard stays locked until it is set |
 
 ### 3. Set up the database
 
@@ -54,8 +55,7 @@ Run [`supabase-schema.sql`](supabase-schema.sql) in the Supabase SQL Editor (or 
 
 - `conversations`: one row per WhatsApp contact, with `mode` (`agent` or `human`) and `last_read_at` for unread indicators
 - `messages`: every message, with `role` (`user` or `assistant`) and, for assistant messages, `sent_by` (`ai` or `human`)
-- Row Level Security: the anon key gets read-only access (needed for Realtime), and all writes go through the server
-- The Realtime publication for both tables
+- Row Level Security with no policies for the public anon key, so conversations can only be reached through the signed-in dashboard. The server uses the service role key, which bypasses RLS
 
 The script is idempotent: it is safe to run again, and it upgrades databases created from the original schema.
 
@@ -64,6 +64,8 @@ The script is idempotent: it is safe to run again, and it upgrades databases cre
 ```bash
 npm run dev
 ```
+
+Open http://localhost:3000 and sign in with your `DASHBOARD_PASSWORD`. In development the login is skipped while that variable is empty.
 
 ### 5. Expose your local server
 
@@ -99,6 +101,10 @@ ngrok http 3000
 | PATCH | `/api/conversations/[id]` | Update the mode (`{"mode": "human"}`) and/or mark as read (`{"read": true}`) |
 | GET | `/api/conversations/[id]/messages` | The latest 500 messages of a conversation |
 | POST | `/api/conversations/[id]/send` | Send a manual message from the dashboard (`{"message": "..."}`) |
+| POST | `/api/auth/login` | Sign in with `{"password": "..."}` and receive the session cookie |
+| POST | `/api/auth/logout` | Clear the session cookie |
+
+Every route except `/api/webhook` and the login routes needs a signed-in session, enforced in [`src/proxy.ts`](src/proxy.ts).
 
 ## Dashboard Features
 
@@ -111,9 +117,10 @@ ngrok http 3000
 
 ## Security
 
-- **The dashboard has no login.** Anyone who can reach its URL can read conversations and send WhatsApp messages. Add authentication before deploying it publicly.
-- **Realtime uses the public anon key**, which the schema grants read-only access to both tables. The anon key is included in the page's JavaScript, so anyone who has it can read conversation data.
-- **Set `WHATSAPP_APP_SECRET` in production** so that only Meta can call the webhook.
+- **The dashboard requires a password.** Set `DASHBOARD_PASSWORD` and sign in at `/login`. In production the dashboard stays locked until that variable is set. Sessions are signed cookies valid for 7 days, and changing the password signs everyone out.
+- **The database cannot be read with the public key.** Row Level Security is on with no policies for the anon role. The dashboard only receives update pings over Realtime Broadcast (a conversation ID, never message content) and loads conversations through its signed-in API.
+- **Meta's webhook stays public**, as it has to be. Set `WHATSAPP_APP_SECRET` so only requests signed by Meta are accepted.
+- **It is one shared password, not user accounts.** There is no per-user sign-in or audit trail. For several clinics or staff members, move to Supabase Auth with per-tenant access rules.
 - **Never commit credentials.** `.env.local` is gitignored; `.env.example` is meant to be committed, so keep it free of real values.
 
 ## Deployment

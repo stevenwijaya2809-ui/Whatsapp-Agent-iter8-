@@ -1,6 +1,6 @@
 -- Run this in the Supabase SQL Editor (or apply it as a migration via the Supabase MCP server).
 -- Every statement is idempotent: it works on a fresh project and upgrades a database
--- that was created from the original schema.
+-- that was created from an earlier version of this schema.
 
 create table if not exists conversations (
   id uuid default gen_random_uuid() primary key,
@@ -31,31 +31,31 @@ create index if not exists idx_messages_conversation on messages(conversation_id
 create index if not exists idx_conversations_updated on conversations(updated_at desc);
 
 -- Row Level Security. The server uses the service role key, which bypasses RLS.
--- The dashboard's browser client only uses the public anon key to receive Realtime
--- events, so anon gets read-only access and cannot insert, update or delete.
+-- No policies are defined for anyone else, so the public anon key cannot read or
+-- write these tables: conversations are only reachable through the signed-in dashboard.
 alter table conversations enable row level security;
 alter table messages enable row level security;
 
+-- The dashboard used to read these tables with the public anon key to receive Realtime
+-- changes. It now listens for update pings the server sends over Realtime Broadcast and
+-- reloads through its authenticated API, so that read access is revoked.
 drop policy if exists "Anon can read conversations" on conversations;
-create policy "Anon can read conversations" on conversations for select to anon using (true);
-
 drop policy if exists "Anon can read messages" on messages;
-create policy "Anon can read messages" on messages for select to anon using (true);
 
--- Enable Realtime for the dashboard
+-- For the same reason the tables no longer need to stream changes to clients.
 do $$
 begin
-  if not exists (
+  if exists (
     select 1 from pg_publication_tables
     where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'messages'
   ) then
-    alter publication supabase_realtime add table messages;
+    alter publication supabase_realtime drop table messages;
   end if;
 
-  if not exists (
+  if exists (
     select 1 from pg_publication_tables
     where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'conversations'
   ) then
-    alter publication supabase_realtime add table conversations;
+    alter publication supabase_realtime drop table conversations;
   end if;
 end $$;

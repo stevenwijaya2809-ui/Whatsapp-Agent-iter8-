@@ -24,6 +24,7 @@ interface ConversationListProps {
   selectedId: string | null;
   realtimeStatus: RealtimeStatus;
   onSelect: (id: string) => void;
+  onSignOut: () => void;
   className?: string;
 }
 
@@ -33,6 +34,7 @@ export function ConversationList({
   selectedId,
   realtimeStatus,
   onSelect,
+  onSignOut,
   className = "",
 }: ConversationListProps) {
   const realtime = REALTIME_INDICATOR[realtimeStatus];
@@ -52,10 +54,25 @@ export function ConversationList({
             {conversations.length} conversation{conversations.length === 1 ? "" : "s"}
           </p>
         </div>
-        <span className="flex shrink-0 items-center gap-1.5 text-[11px] text-white/40" title="Realtime updates">
-          <span className={`h-1.5 w-1.5 rounded-full ${realtime.dot}`} />
-          {realtime.label}
-        </span>
+        <div className="flex shrink-0 items-center gap-2">
+          <span className="flex items-center gap-1.5 text-[11px] text-white/40" title="Live updates">
+            <span className={`h-1.5 w-1.5 rounded-full ${realtime.dot}`} />
+            {realtime.label}
+          </span>
+          <button
+            type="button"
+            onClick={onSignOut}
+            aria-label="Sign out"
+            title="Sign out"
+            className="rounded-lg p-1.5 text-white/40 transition-colors hover:bg-white/[0.06] hover:text-white"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+              <polyline points="16 17 21 12 16 7" />
+              <line x1="21" y1="12" x2="9" y2="12" />
+            </svg>
+          </button>
+        </div>
       </header>
 
       <nav aria-label="Conversations" className="flex-1 overflow-y-auto">

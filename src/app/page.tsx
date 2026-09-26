@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ChatPanel } from "@/components/ChatPanel";
 import { ConversationList, type RealtimeStatus } from "@/components/ConversationList";
+import { DASHBOARD_CHANNEL, DASHBOARD_EVENT } from "@/lib/realtime-channel";
 import { getBrowserSupabase, isRealtimeConfigured } from "@/lib/supabase-browser";
 import type { ConversationMode, ConversationWithLastMessage, Message } from "@/lib/types";
 
@@ -14,6 +15,10 @@ async function api<T>(url: string, options: { method?: string; body?: unknown } 
     body: options.body === undefined ? undefined : JSON.stringify(options.body),
     cache: "no-store",
   });
+  if (res.status === 401) {
+    window.location.href = "/login";
+    throw new Error("Your session has expired");
+  }
   const data = await res.json().catch(() => null);
   if (!res.ok) throw new Error(data?.error ?? `Request failed with status ${res.status}`);
   return data as T;
@@ -60,7 +65,7 @@ export default function Dashboard() {
     }
   }, []);
 
-  /** Reloads the conversation list, coalescing bursts of realtime events into one request. */
+  /** Reloads the conversation list, coalescing bursts of update pings into one request. */
   const scheduleRefresh = useCallback(() => {
     clearTimeout(refreshTimer.current);
     refreshTimer.current = setTimeout(loadConversations, 300);
@@ -98,24 +103,23 @@ export default function Dashboard() {
     };
   }, [selectedId, messagesReloadKey]);
 
+  // The server sends a ping whenever a conversation changes; the data itself is
+  // always loaded through the authenticated API, never straight from the database.
   useEffect(() => {
     const supabase = getBrowserSupabase();
     if (!supabase) return;
 
     const channel = supabase
-      .channel("dashboard")
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, (payload) => {
-        const message = payload.new as Message;
-        if (message.conversation_id === selectedIdRef.current) {
-          setMessages((current) => mergeMessages(current, [message]));
-          // The operator is looking at this conversation, so the new message counts as read
-          if (message.role === "user" && document.visibilityState === "visible") {
-            markRead(message.conversation_id);
-          }
+      .channel(DASHBOARD_CHANNEL)
+      .on("broadcast", { event: DASHBOARD_EVENT }, ({ payload }) => {
+        const conversationId = (payload as { conversationId?: string } | null)?.conversationId;
+        if (conversationId && conversationId === selectedIdRef.current) {
+          setMessagesReloadKey((key) => key + 1);
+          // The operator is looking at this conversation, so its new messages count as read
+          if (document.visibilityState === "visible") markRead(conversationId);
         }
         scheduleRefresh();
       })
-      .on("postgres_changes", { event: "*", schema: "public", table: "conversations" }, scheduleRefresh)
       .subscribe((status) => {
         const live = status === "SUBSCRIBED";
         setRealtimeStatus(live ? "live" : "offline");
@@ -166,6 +170,14 @@ export default function Dashboard() {
     }
   }
 
+  async function signOut() {
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } finally {
+      window.location.href = "/login";
+    }
+  }
+
   return (
     <main className="flex h-dvh overflow-hidden">
       <ConversationList
@@ -174,6 +186,7 @@ export default function Dashboard() {
         selectedId={selectedId}
         realtimeStatus={realtimeStatus}
         onSelect={selectConversation}
+        onSignOut={signOut}
         className={`w-full md:flex md:w-80 md:shrink-0 ${selected ? "hidden" : "flex"}`}
       />
 

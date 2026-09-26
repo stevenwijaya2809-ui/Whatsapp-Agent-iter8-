@@ -1,4 +1,5 @@
 import "server-only";
+import { notifyDashboard } from "@/lib/realtime";
 import { getSupabase } from "@/lib/supabase";
 import type {
   Conversation,
@@ -63,6 +64,9 @@ export async function updateConversation(
     .select()
     .maybeSingle();
   if (error) throw new Error(`Failed to update conversation: ${error.message}`);
+
+  // Marking as read is not worth a ping, and pinging on it would make dashboards loop
+  if (data && changes.mode !== undefined) await notifyDashboard(id);
   return data;
 }
 
@@ -87,8 +91,9 @@ interface NewMessage {
 }
 
 /**
- * Stores a message and moves its conversation to the top of the list.
- * Returns null when the WhatsApp message ID is already stored (a webhook redelivery).
+ * Stores a message, moves its conversation to the top of the list, and tells open
+ * dashboards to reload it. Returns null when the WhatsApp message ID is already
+ * stored (a webhook redelivery).
  */
 export async function saveMessage({
   conversationId,
@@ -118,5 +123,6 @@ export async function saveMessage({
     .eq("id", conversationId);
   if (touchError) console.error("Failed to update conversation timestamp:", touchError.message);
 
+  await notifyDashboard(conversationId);
   return data;
 }
