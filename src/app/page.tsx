@@ -45,6 +45,8 @@ export default function Dashboard() {
   const [messagesReloadKey, setMessagesReloadKey] = useState(0);
   const [realtimeStatus, setRealtimeStatus] = useState<RealtimeStatus>(isRealtimeConfigured ? "connecting" : "offline");
   const [error, setError] = useState<string | null>(null);
+  /** On phones the results replace the list; on wider screens they always sit beside it */
+  const [showResults, setShowResults] = useState(false);
 
   // Latest selection, for callbacks that outlive the render they were created in
   const selectedIdRef = useRef<string | null>(null);
@@ -138,11 +140,23 @@ export default function Dashboard() {
 
   function selectConversation(id: string) {
     if (id === selectedId) return;
+    setShowResults(false);
     setSelectedId(id);
     setMessages([]);
     setLoadingMessages(true);
     markRead(id);
   }
+
+  // Escape leaves a conversation and lands back on the results
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      const target = event.target as HTMLElement | null;
+      const typing = target?.tagName === "INPUT" || target?.tagName === "TEXTAREA";
+      if (event.key === "Escape" && !typing) setSelectedId(null);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   async function changeMode(id: string, mode: ConversationMode) {
     const previous = conversations.find((c) => c.id === id)?.mode;
@@ -199,8 +213,13 @@ export default function Dashboard() {
         selectedId={selectedId}
         realtimeStatus={realtimeStatus}
         onSelect={selectConversation}
+        onShowResults={() => {
+          setSelectedId(null);
+          setShowResults(true);
+        }}
+        resultsActive={!selected}
         onSignOut={signOut}
-        className={`w-full md:flex md:w-80 md:shrink-0 ${selected ? "hidden" : "flex"}`}
+        className={`w-full md:flex md:w-80 md:shrink-0 ${selected || showResults ? "hidden md:flex" : "flex"}`}
       />
 
       {selected ? (
@@ -216,7 +235,10 @@ export default function Dashboard() {
           className="flex-1"
         />
       ) : (
-        <ResultsSummary className="hidden flex-1 md:block" />
+        <ResultsSummary
+          onBack={() => setShowResults(false)}
+          className={`flex-1 ${showResults ? "block" : "hidden md:block"}`}
+        />
       )}
 
       {error && (

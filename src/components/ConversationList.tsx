@@ -24,6 +24,9 @@ interface ConversationListProps {
   selectedId: string | null;
   realtimeStatus: RealtimeStatus;
   onSelect: (id: string) => void;
+  onShowResults: () => void;
+  /** True when the results view is on screen rather than a conversation */
+  resultsActive: boolean;
   onSignOut: () => void;
   className?: string;
 }
@@ -34,6 +37,8 @@ export function ConversationList({
   selectedId,
   realtimeStatus,
   onSelect,
+  onShowResults,
+  resultsActive,
   onSignOut,
   className = "",
 }: ConversationListProps) {
@@ -74,6 +79,24 @@ export function ConversationList({
           </button>
         </div>
       </header>
+
+      <button
+        type="button"
+        onClick={onShowResults}
+        aria-current={resultsActive ? "true" : undefined}
+        className={`flex w-full items-center gap-3 border-b border-white/[0.06] px-5 py-3 text-left transition-colors ${
+          resultsActive ? "bg-white/[0.07]" : "hover:bg-white/[0.04]"
+        }`}
+      >
+        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-white/[0.06]">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white/60" aria-hidden>
+            <line x1="18" y1="20" x2="18" y2="10" />
+            <line x1="12" y1="20" x2="12" y2="4" />
+            <line x1="6" y1="20" x2="6" y2="14" />
+          </svg>
+        </span>
+        <span className={`text-xs font-medium ${resultsActive ? "text-white" : "text-white/70"}`}>Results</span>
+      </button>
 
       <nav aria-label="Conversations" className="flex-1 overflow-y-auto">
         {conversations.length === 0 ? (

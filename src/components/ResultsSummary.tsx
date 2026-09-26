@@ -9,10 +9,12 @@ const PERIODS = [7, 30];
 const CHART = { width: 640, plotHeight: 110, axisBand: 20, padLeft: 34, padRight: 8, maxBarWidth: 24, gap: 2 };
 
 interface ResultsSummaryProps {
+  /** Shown on narrow screens, where the results replace the conversation list */
+  onBack?: () => void;
   className?: string;
 }
 
-export function ResultsSummary({ className = "" }: ResultsSummaryProps) {
+export function ResultsSummary({ onBack, className = "" }: ResultsSummaryProps) {
   const [days, setDays] = useState(PERIODS[1]);
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -46,7 +48,21 @@ export function ResultsSummary({ className = "" }: ResultsSummaryProps) {
     <section className={`overflow-y-auto px-6 py-8 ${className}`} aria-label="Results summary">
       <div className="mx-auto w-full max-w-2xl">
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-sm font-semibold text-white">Results</h2>
+          <div className="flex items-center gap-2">
+            {onBack && (
+              <button
+                type="button"
+                onClick={onBack}
+                aria-label="Back to conversations"
+                className="-ml-1 rounded-lg p-1.5 text-white/60 hover:bg-white/[0.06] hover:text-white md:hidden"
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <path d="M15 18l-6-6 6-6" />
+                </svg>
+              </button>
+            )}
+            <h2 className="text-sm font-semibold text-white">Results</h2>
+          </div>
           <div role="group" aria-label="Time range" className="flex rounded-lg border border-white/10 bg-white/[0.04] p-0.5 text-xs font-medium">
             {PERIODS.map((period) => (
               <button
