@@ -2,13 +2,13 @@
 
 import { useMemo, useState } from "react";
 import { Avatar } from "@/components/Avatar";
+import { InboxToolbar } from "@/components/InboxToolbar";
 import { MODE_STYLES } from "@/components/mode";
 import { formatListTimestamp, formatWaiting } from "@/lib/format";
 import {
   countByFilter,
   filterConversations,
   INBOX_FILTERS,
-  INBOX_SORTS,
   sortConversations,
   waitingFor,
   type InboxFilterId,
@@ -61,6 +61,7 @@ export function ConversationList({
   const [search, setSearch] = useState("");
 
   const counts = useMemo(() => countByFilter(conversations), [conversations]);
+  const activeFilterLabel = (INBOX_FILTERS.find((option) => option.id === filter) ?? INBOX_FILTERS[0]).label;
   const visible = useMemo(
     () => sortConversations(filterConversations(conversations, filter, search), sort),
     [conversations, filter, search, sort]
@@ -122,50 +123,15 @@ export function ConversationList({
         <span className={`text-xs font-medium ${resultsActive ? "text-white" : "text-white/70"}`}>Results</span>
       </button>
 
-      <div className="space-y-2 border-b border-white/[0.06] px-3 py-2.5">
-        <div className="flex gap-2">
-          <input
-            type="search"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search name, number or message"
-            aria-label="Search conversations"
-            className="min-w-0 flex-1 rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-xs text-white placeholder:text-white/30 focus:border-white/25 focus:outline-none"
-          />
-          <select
-            value={sort}
-            onChange={(event) => setSort(event.target.value as InboxSortId)}
-            aria-label="Sort conversations"
-            className="shrink-0 rounded-lg border border-white/10 bg-white/[0.04] px-2 py-1.5 text-xs text-white/70 focus:border-white/25 focus:outline-none"
-          >
-            {INBOX_SORTS.map((option) => (
-              <option key={option.id} value={option.id} className="bg-[#141414]">
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div role="group" aria-label="Filter conversations" className="flex gap-1.5 overflow-x-auto pb-0.5">
-          {INBOX_FILTERS.map((option) => {
-            const active = option.id === filter;
-            return (
-              <button
-                key={option.id}
-                type="button"
-                title={option.hint}
-                aria-pressed={active}
-                onClick={() => setFilter(option.id)}
-                className={`flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors ${
-                  active ? "bg-white/[0.12] text-white" : "text-white/45 hover:bg-white/[0.06] hover:text-white/70"
-                }`}
-              >
-                {option.label}
-                <span className={active ? "text-white/60" : "text-white/30"}>{counts[option.id]}</span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
+      <InboxToolbar
+        filter={filter}
+        sort={sort}
+        search={search}
+        counts={counts}
+        onFilterChange={setFilter}
+        onSortChange={setSort}
+        onSearchChange={setSearch}
+      />
 
       <nav aria-label="Conversations" className="flex-1 overflow-y-auto">
         {visible.length === 0 ? (
@@ -179,7 +145,9 @@ export function ConversationList({
               </>
             ) : (
               <>
-                <p className="text-sm text-white/40">Nothing here</p>
+                <p className="text-sm text-white/40">
+                  {search ? `Nothing matches "${search.trim()}"` : `Nothing under "${activeFilterLabel}"`}
+                </p>
                 <button
                   type="button"
                   onClick={() => {
@@ -188,7 +156,7 @@ export function ConversationList({
                   }}
                   className="mt-1 text-xs text-white/40 underline underline-offset-2 hover:text-white/70"
                 >
-                  Clear the filter and search
+                  Show all conversations
                 </button>
               </>
             )}

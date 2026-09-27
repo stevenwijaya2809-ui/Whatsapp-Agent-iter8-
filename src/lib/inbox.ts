@@ -63,20 +63,24 @@ export type InboxSortId = "recent" | "waiting" | "urgency";
 export interface InboxSort {
   id: InboxSortId;
   label: string;
+  /** For the toolbar button, where the full label would crowd out the filter beside it */
+  short: string;
   compare(a: ConversationWithLastMessage, b: ConversationWithLastMessage): number;
 }
 
 export const INBOX_SORTS: InboxSort[] = [
-  { id: "recent", label: "Most recent", compare: (a, b) => lastActivity(b) - lastActivity(a) },
+  { id: "recent", label: "Most recent", short: "Recent", compare: (a, b) => lastActivity(b) - lastActivity(a) },
   {
     id: "waiting",
     label: "Longest waiting",
+    short: "Waiting",
     // Conversations nobody owes a reply to have waited no time at all, so they sink
     compare: (a, b) => waitingSince(a) - waitingSince(b) || lastActivity(b) - lastActivity(a),
   },
   {
     id: "urgency",
     label: "Most urgent",
+    short: "Urgent",
     compare: (a, b) => urgencyRank(a) - urgencyRank(b) || lastActivity(b) - lastActivity(a),
   },
 ];
