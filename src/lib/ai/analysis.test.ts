@@ -68,6 +68,30 @@ describe("parseModelOutput", () => {
     expect(analysis?.escalationReason).toBe("customer is angry");
   });
 
+  it("reads an action request with no reply yet", () => {
+    const { text, action } = parseModelOutput('{"action":{"tool":"check_availability","arguments":{"date":"2026-10-02"}}}');
+    expect(text).toBe("");
+    expect(action).toEqual({ tool: "check_availability", arguments: { date: "2026-10-02" } });
+  });
+
+  it("accepts the name/args spelling some models use", () => {
+    expect(parseModelOutput('{"action":{"name":"get_appointments","args":{}}}').action).toEqual({
+      tool: "get_appointments",
+      arguments: {},
+    });
+  });
+
+  it("ignores a malformed action", () => {
+    expect(parseModelOutput('{"reply":"hi","action":{"arguments":{}}}').action).toBeNull();
+    expect(parseModelOutput('{"reply":"hi","action":"book it"}').action).toBeNull();
+  });
+
+  it("keeps both a reply and an action when the model sends both", () => {
+    const parsed = parseModelOutput('{"reply":"One moment","action":{"tool":"get_appointments","arguments":{}}}');
+    expect(parsed.text).toBe("One moment");
+    expect(parsed.action?.tool).toBe("get_appointments");
+  });
+
   it("treats null-ish strings as absent", () => {
     const { analysis } = parseModelOutput('{"reply":"hi","sub_intent":"null","escalation_reason":"none"}');
     expect(analysis?.subIntent).toBeNull();

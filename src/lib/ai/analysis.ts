@@ -12,11 +12,18 @@ export interface ReplyAnalysis {
   escalationReason: string | null;
 }
 
+/** The model asking to do something before it answers. */
+export interface ToolRequest {
+  tool: string;
+  arguments: Record<string, unknown>;
+}
+
 export interface ParsedReply {
-  /** The message for the customer */
+  /** The message for the customer; empty while the model is still taking an action */
   text: string;
   /** Null when the model ignored the contract, so callers can tell "unknown" from "neutral" */
   analysis: ReplyAnalysis | null;
+  action: ToolRequest | null;
 }
 
 const INTENTS: Intent[] = [
@@ -52,13 +59,25 @@ export function parseModelOutput(raw: string): ParsedReply {
     try {
       const parsed = JSON.parse(candidate) as Record<string, unknown>;
       const reply = typeof parsed.reply === "string" ? parsed.reply.trim() : "";
-      if (reply) return { text: reply, analysis: readAnalysis(parsed) };
+      const action = readAction(parsed.action);
+      if (reply || action) return { text: reply, analysis: readAnalysis(parsed), action };
     } catch {
       // Malformed JSON: fall through and treat the output as plain text
     }
   }
 
-  return { text: cleaned, analysis: null };
+  return { text: cleaned, analysis: null, action: null };
+}
+
+/** Accepts {tool, arguments} and the {name, args} shape some models prefer. */
+function readAction(value: unknown): ToolRequest | null {
+  if (!value || typeof value !== "object") return null;
+  const raw = value as Record<string, unknown>;
+  const tool = typeof raw.tool === "string" ? raw.tool : typeof raw.name === "string" ? raw.name : null;
+  if (!tool) return null;
+
+  const args = raw.arguments ?? raw.args ?? {};
+  return { tool: tool.trim(), arguments: typeof args === "object" && args !== null ? (args as Record<string, unknown>) : {} };
 }
 
 function readAnalysis(parsed: Record<string, unknown>): ReplyAnalysis {

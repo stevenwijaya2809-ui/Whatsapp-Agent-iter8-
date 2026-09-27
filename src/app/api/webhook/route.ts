@@ -3,6 +3,7 @@ import { generateReply } from "@/lib/ai";
 import { getCustomer } from "@/lib/customers";
 import {
   applyAnalysis,
+  escalateConversation,
   getConversation,
   getRecentMessages,
   saveDraft,
@@ -103,6 +104,7 @@ async function prepareReply(conversationId: string, phone: string) {
     const completion = await generateReply({
       history: history.map(({ role, content }) => ({ role, content })),
       customer,
+      conversationId,
     });
     const reply = toWhatsAppFormat(completion.text) || FALLBACK_REPLY;
     if (completion.knowledgeMiss) {
@@ -111,6 +113,11 @@ async function prepareReply(conversationId: string, phone: string) {
     if (completion.analysis) {
       const trigger = [...history].reverse().find((message) => message.role === "user");
       await applyAnalysis(conversationId, trigger?.id ?? null, completion.analysis);
+    }
+    // An action the assistant could not complete is always a person's problem
+    if (completion.toolFailed) {
+      const failure = completion.toolsUsed.find((outcome) => !outcome.ok);
+      await escalateConversation(conversationId, `Could not ${failure?.tool ?? "complete an action"}: ${failure?.error ?? "unknown error"}`, null);
     }
 
     // The operator may have changed the mode while the model was generating

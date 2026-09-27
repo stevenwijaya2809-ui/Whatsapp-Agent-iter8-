@@ -237,3 +237,28 @@ export async function applyAnalysis(
   );
   if (analysisError) console.error("Failed to record message analysis:", analysisError.message);
 }
+
+/**
+ * Hands a conversation to a person. The flag is only ever raised here, never cleared, so an
+ * operator stays in control once involved; the reason and summary are what they read first.
+ */
+export async function escalateConversation(
+  conversationId: string,
+  reason: string,
+  summary: string | null
+): Promise<void> {
+  const { error } = await getSupabase()
+    .from("conversations")
+    .update({
+      needs_human: true,
+      escalation_reason: reason,
+      ...(summary ? { escalation_summary: summary } : {}),
+      escalated_at: new Date().toISOString(),
+    })
+    .eq("id", conversationId);
+  if (error) {
+    console.error("Failed to escalate conversation:", error.message);
+    return;
+  }
+  await notifyDashboard(conversationId);
+}

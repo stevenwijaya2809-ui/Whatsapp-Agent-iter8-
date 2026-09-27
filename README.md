@@ -44,6 +44,7 @@ Next.js reads `.env.local`, not `.env.example`. Keep real credentials in `.env.l
 | `WHATSAPP_APP_SECRET` | Recommended | Meta App > App settings > Basic > App secret. When set, webhook calls without a valid Meta signature are rejected |
 | `OPENROUTER_API_KEY` | Yes | API key from openrouter.ai |
 | `AI_MODEL` | Yes | OpenRouter model ID (e.g. `openai/gpt-4o-mini`) |
+| `AI_TOOLS` | No | `off` disables booking actions; defaults to on |
 | `NEXT_PUBLIC_SUPABASE_URL` | Yes | Supabase project URL |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Yes | Supabase anon key; the dashboard uses it only to receive update pings |
 | `SUPABASE_SERVICE_ROLE_KEY` | Yes | Supabase service role key, used by the server only |
@@ -97,6 +98,7 @@ ngrok http 3000
 - **Reliable webhook**: incoming messages are stored before the webhook responds, so if the database is unavailable Meta retries the delivery. Redeliveries are ignored using the WhatsApp message ID. The AI reply runs after the response is sent (Next.js `after`), so Meta always gets a fast 200.
 - **AI context**: the system prompt is assembled per message from [`src/lib/ai/prompt/`](src/lib/ai/prompt) — core behaviour, the business profile, what is known about the customer, and the knowledge entries that match the question — plus the last 20 messages. Markdown in replies is converted to WhatsApp formatting, and replies longer than WhatsApp's 4096-character limit are split.
 - **Business knowledge**: opening hours, services, policies and FAQs live in the `kb_entries` table, not in code. The AI is told to answer only from what it retrieves and to offer to check rather than invent.
+- **Actions**: the assistant can check availability, book, reschedule and cancel appointments, and hand a conversation to a person. It asks for an action, the server runs it and records the attempt in `tool_calls`, and only then does the assistant write its reply from the real result. A booking outside opening hours, in the past, or clashing with another is refused by the server, not by the model. A failed action escalates the conversation. Set `AI_TOOLS=off` to turn actions off.
 - **Non-text messages** (images, voice notes, locations, etc.) are stored as placeholders such as `[Image] caption`, so they show up in the dashboard and the AI knows something was sent.
 - **Delivery status**: Meta's reports (sent, delivered, read, failed) are stored against each message and shown as ticks. Meta rejects some messages only after accepting them, such as replies outside the 24-hour window, so this is the only way to see that a reply never arrived.
 

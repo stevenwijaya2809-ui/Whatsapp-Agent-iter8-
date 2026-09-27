@@ -27,7 +27,7 @@ export interface PromptContext {
 export function assembleSystemPrompt({ organization, customer, knowledge, tools = [], now }: PromptContext): string {
   return [
     CORE_SYSTEM_PROMPT,
-    businessContext(organization),
+    businessContext(organization, now),
     customerContext(customer, now),
     knowledgeContext(knowledge, now),
     toolsContext(tools),

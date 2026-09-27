@@ -82,3 +82,9 @@ export function clinicDayStart(daysAgo: number): Date {
   const midnightUtc = new Date(`${key}T00:00:00Z`);
   return new Date(midnightUtc.getTime() - offsetMinutes(midnightUtc) * 60_000);
 }
+
+/** The UTC instant of a wall-clock time in the clinic's timezone, e.g. 2026-10-02 at 14:30. */
+export function clinicInstant(dateKey: string, hour: number, minute = 0): Date {
+  const naive = new Date(`${dateKey}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:00Z`);
+  return new Date(naive.getTime() - offsetMinutes(naive) * 60_000);
+}

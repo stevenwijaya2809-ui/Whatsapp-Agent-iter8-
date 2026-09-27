@@ -1,11 +1,16 @@
 import "server-only";
 import OpenAI from "openai";
+import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import { parseModelOutput, type ReplyAnalysis } from "@/lib/ai/analysis";
 import { assembleSystemPrompt } from "@/lib/ai/prompt/assemble";
+import { runTool, toolDescriptions } from "@/lib/ai/tools/registry";
 import { requireEnv } from "@/lib/env";
 import { retrieveKnowledge } from "@/lib/knowledge";
 import { getOrganization } from "@/lib/organization";
 import type { Customer, MessageRole } from "@/lib/types";
+
+/** How many actions the model may take before it must answer. Stops a loop running away. */
+const MAX_TOOL_ROUNDS = 2;
 
 let client: OpenAI | null = null;
 
@@ -24,6 +29,13 @@ export interface ReplyRequest {
   /** Conversation history, oldest message first */
   history: { role: MessageRole; content: string }[];
   customer: Customer | null;
+  conversationId: string;
+}
+
+export interface ToolOutcome {
+  tool: string;
+  ok: boolean;
+  error?: string;
 }
 
 export interface ReplyResult {
@@ -33,25 +45,60 @@ export interface ReplyResult {
   /** No knowledge entry matched the question, so the reply should have deferred rather than answered */
   knowledgeMiss: boolean;
   knowledgeUsed: number;
+  toolsUsed: ToolOutcome[];
+  /** An action was attempted and did not succeed, so a person should pick this up */
+  toolFailed: boolean;
 }
 
 /**
- * Generates the assistant's next reply. Business facts come from the knowledge base and the
- * organization's settings, never from this file.
+ * Produces the assistant's next reply, letting it take actions first. Business facts come from
+ * the knowledge base and the organization's settings; anything the reply claims about an action
+ * comes only from the result of a tool that actually ran.
  */
-export async function generateReply({ history, customer }: ReplyRequest): Promise<ReplyResult> {
+export async function generateReply({ history, customer, conversationId }: ReplyRequest): Promise<ReplyResult> {
+  const now = new Date();
   const organization = await getOrganization();
   const question = [...history].reverse().find((message) => message.role === "user")?.content ?? "";
   const knowledge = await retrieveKnowledge(organization.id, question);
+  const tools = toolDescriptions();
 
-  const completion = await getClient().chat.completions.create({
-    model: requireEnv("AI_MODEL"),
-    messages: [
-      { role: "system", content: assembleSystemPrompt({ organization, customer, knowledge }) },
-      ...history,
-    ],
-  });
+  const messages: ChatCompletionMessageParam[] = [
+    { role: "system", content: assembleSystemPrompt({ organization, customer, knowledge, tools, now }) },
+    ...history,
+  ];
 
-  const { text, analysis } = parseModelOutput(completion.choices[0]?.message?.content ?? "");
-  return { text, analysis, knowledgeMiss: knowledge.miss, knowledgeUsed: knowledge.entries.length };
+  const toolsUsed: ToolOutcome[] = [];
+  let parsed = parseModelOutput("");
+
+  for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
+    const completion = await getClient().chat.completions.create({
+      model: requireEnv("AI_MODEL"),
+      messages,
+    });
+    const raw = completion.choices[0]?.message?.content ?? "";
+    parsed = parseModelOutput(raw);
+
+    if (!parsed.action || tools.length === 0 || round === MAX_TOOL_ROUNDS) break;
+
+    const result = await runTool(parsed.action.tool, parsed.action.arguments, {
+      organization,
+      conversationId,
+      customer,
+      now,
+    });
+    toolsUsed.push({ tool: parsed.action.tool, ok: result.ok, ...(result.ok ? {} : { error: result.error }) });
+
+    // Feed the real result back so the reply can only repeat what happened
+    messages.push({ role: "assistant", content: raw });
+    messages.push({ role: "system", content: `Result of ${parsed.action.tool}: ${JSON.stringify(result)}` });
+  }
+
+  return {
+    text: parsed.text,
+    analysis: parsed.analysis,
+    knowledgeMiss: knowledge.miss,
+    knowledgeUsed: knowledge.entries.length,
+    toolsUsed,
+    toolFailed: toolsUsed.some((outcome) => !outcome.ok),
+  };
 }

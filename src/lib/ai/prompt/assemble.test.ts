@@ -89,7 +89,7 @@ describe("assembleSystemPrompt", () => {
   });
 
   it("tells the model it has no actions until tools are enabled", () => {
-    expect(assembleSystemPrompt({ organization, customer, knowledge, now })).toContain("cannot perform actions yet");
+    expect(assembleSystemPrompt({ organization, customer, knowledge, now })).toContain("cannot perform actions");
     expect(assembleSystemPrompt({ organization, customer, knowledge, tools: ["create_booking"], now })).toContain(
       "create_booking"
     );

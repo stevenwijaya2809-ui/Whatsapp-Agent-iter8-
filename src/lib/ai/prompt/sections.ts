@@ -7,10 +7,11 @@ import type { Customer } from "@/lib/types";
  * it has nothing to add, so the assembler can simply drop empties.
  */
 
-export function businessContext(organization: Organization): string {
+export function businessContext(organization: Organization, now = new Date()): string {
   const { business } = organization;
   const lines = [
     `Business: ${business.name}`,
+    `Now: ${formatNow(organization.timezone, now)}`,
     business.address && `Address: ${business.address}`,
     business.phone && `Phone: ${business.phone}`,
     business.email && `Email: ${business.email}`,
@@ -40,7 +41,10 @@ export function customerContext(customer: Customer | null, now = new Date()): st
 
 export function knowledgeContext(knowledge: KnowledgeResult, now = new Date()): string {
   if (knowledge.entries.length === 0) {
-    return section("BUSINESS KNOWLEDGE", "No business information is available. Do not answer factual questions; offer to check.");
+    return section(
+      "BUSINESS KNOWLEDGE",
+      "No business information is available. Do not answer factual questions; offer to check."
+    );
   }
 
   const entries = knowledge.entries
@@ -71,18 +75,37 @@ export function escalationRules(organization: Organization): string {
   );
 }
 
-export function toolsContext(toolNames: string[]): string {
-  if (toolNames.length === 0) {
+export function toolsContext(toolDescriptions: string[]): string {
+  if (toolDescriptions.length === 0) {
     return section(
       "ACTIONS",
-      "You cannot perform actions yet. For anything that needs a change in the system, say a colleague will arrange it."
+      "You cannot perform actions. For anything that needs a change in the system, say a colleague will arrange it."
     );
   }
-  return section("ACTIONS", `You may call: ${toolNames.join(", ")}. Report only what a call actually returned.`);
+
+  const protocol =
+    'To act, reply with {"action": {"tool": "name", "arguments": {}}} and no "reply" field. You will be given the result, and must then write the customer\'s reply using only what it returned.';
+
+  const rules =
+    "Check availability before offering a time. If a result says the action failed, tell the customer plainly that it did not go through and that a colleague will follow up. Never describe a failed or unattempted action as done.";
+
+  return section("ACTIONS", [protocol, "", ...toolDescriptions.map((line) => `- ${line}`), "", rules].join("\n"));
 }
 
 function section(title: string, body: string): string {
   return `## ${title}\n${body}`;
+}
+
+function formatNow(timezone: string, now: Date): string {
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: timezone,
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(now);
 }
 
 function formatHours(hours: Record<string, [number, number] | null>): string {
