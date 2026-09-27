@@ -1,11 +1,14 @@
 import type { NextRequest } from "next/server";
-import { isUuid, updateConversation } from "@/lib/conversations";
+import { isUuid, resolveConversation, updateConversation } from "@/lib/conversations";
 import { errorResponse } from "@/lib/http";
 import type { Conversation } from "@/lib/types";
 
 const MODES = ["agent", "draft", "human"];
 
-/** Updates a conversation: `{ "mode": ... }`, `{ "read": true }` and/or `{ "discardDraft": true }`. */
+/**
+ * Updates a conversation: `{ "mode": ... }`, `{ "read": true }`, `{ "discardDraft": true }`
+ * and/or `{ "resolve": true }` to close a hand-over once a person has dealt with it.
+ */
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   if (!isUuid(id)) return errorResponse("Conversation not found", 404);
@@ -25,11 +28,18 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     changes.draft_created_at = null;
   }
 
-  if (Object.keys(changes).length === 0) {
-    return errorResponse('Nothing to update: send "mode", "read": true and/or "discardDraft": true', 400);
+  const resolving = body?.resolve === true;
+  if (Object.keys(changes).length === 0 && !resolving) {
+    return errorResponse('Nothing to update: send "mode", "read": true, "discardDraft": true and/or "resolve": true', 400);
   }
 
   try {
+    // Resolving first, so a mode change sent with it is what the conversation ends on
+    const resolved = resolving ? await resolveConversation(id) : null;
+    if (resolving && !resolved) return errorResponse("Conversation not found", 404);
+
+    if (Object.keys(changes).length === 0) return Response.json(resolved);
+
     const conversation = await updateConversation(id, changes);
     return conversation ? Response.json(conversation) : errorResponse("Conversation not found", 404);
   } catch (error) {

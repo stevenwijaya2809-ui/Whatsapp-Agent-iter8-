@@ -36,6 +36,8 @@ export interface ToolOutcome {
   tool: string;
   ok: boolean;
   error?: string;
+  /** A short reason the tool reported, such as why it handed the conversation over */
+  detail?: string;
 }
 
 export interface ReplyResult {
@@ -86,7 +88,13 @@ export async function generateReply({ history, customer, conversationId }: Reply
       customer,
       now,
     });
-    toolsUsed.push({ tool: parsed.action.tool, ok: result.ok, ...(result.ok ? {} : { error: result.error }) });
+    toolsUsed.push({
+      tool: parsed.action.tool,
+      ok: result.ok,
+      ...(result.ok
+        ? typeof result.data.reason === "string" && { detail: result.data.reason }
+        : { error: result.error }),
+    });
 
     // Feed the real result back so the reply can only repeat what happened
     messages.push({ role: "assistant", content: raw });

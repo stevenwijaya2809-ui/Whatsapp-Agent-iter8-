@@ -23,6 +23,8 @@ interface ChatPanelProps {
   /** Sends a message. Resolves to an error message, or null on success. */
   onSend: (text: string) => Promise<string | null>;
   onDiscardDraft: () => void;
+  /** Closes a hand-over once the operator has dealt with it */
+  onResolve: () => void;
   className?: string;
 }
 
@@ -34,6 +36,7 @@ export function ChatPanel({
   onModeChange,
   onSend,
   onDiscardDraft,
+  onResolve,
   className = "",
 }: ChatPanelProps) {
   const mode = MODE_STYLES[conversation.mode];
@@ -106,6 +109,8 @@ export function ChatPanel({
         )}
       </div>
 
+      {conversation.needs_human && <HandoverCard conversation={conversation} onResolve={onResolve} />}
+
       <div ref={scrollerRef} className="flex-1 space-y-2 overflow-y-auto px-4 py-5 md:px-6">
         {messages.length === 0 ? (
           <p className="py-12 text-center text-xs text-white/30">{loading ? "Loading messages…" : "No messages yet"}</p>
@@ -175,6 +180,54 @@ function ModeToggle({ mode, onChange }: { mode: ConversationMode; onChange: (mod
           </button>
         );
       })}
+    </div>
+  );
+}
+
+/**
+ * What an operator sees first on a conversation the assistant handed over: why it was handed
+ * over, and a briefing assembled from the record so they can act without reading the thread.
+ */
+function HandoverCard({ conversation, onResolve }: { conversation: Conversation; onResolve: () => void }) {
+  const [showBriefing, setShowBriefing] = useState(true);
+
+  return (
+    <div className="border-b border-amber-500/20 bg-amber-500/[0.06] px-4 py-2.5 md:px-6">
+      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+        <div className="min-w-0 flex-1">
+          <p className="text-[11px] font-medium text-amber-300">
+            Waiting for a person
+            {conversation.escalated_at && (
+              <span className="font-normal text-amber-300/50"> · {formatTime(conversation.escalated_at)}</span>
+            )}
+          </p>
+          <p className="mt-0.5 text-xs text-white/70">{conversation.escalation_reason ?? "No reason recorded"}</p>
+        </div>
+        <div className="flex shrink-0 gap-2">
+          {conversation.escalation_summary && (
+            <button
+              type="button"
+              onClick={() => setShowBriefing((open) => !open)}
+              aria-expanded={showBriefing}
+              className="rounded-lg border border-white/10 px-3 py-1.5 text-xs font-medium text-white/70 transition-colors hover:bg-white/[0.06] hover:text-white"
+            >
+              {showBriefing ? "Hide briefing" : "Briefing"}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onResolve}
+            className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-amber-500"
+          >
+            Mark handled
+          </button>
+        </div>
+      </div>
+      {showBriefing && conversation.escalation_summary && (
+        <pre className="mt-2 max-h-40 overflow-auto rounded-lg border border-white/[0.06] bg-black/20 px-3 py-2 font-sans text-[11px] leading-relaxed whitespace-pre-wrap text-white/65">
+          {conversation.escalation_summary}
+        </pre>
+      )}
     </div>
   );
 }

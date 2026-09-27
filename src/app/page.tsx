@@ -197,6 +197,17 @@ export default function Dashboard() {
     }
   }
 
+  /** Closes a hand-over. The reason and briefing stay on the record; only the flag is cleared. */
+  async function resolveHandover(id: string) {
+    setConversations((current) => current.map((c) => (c.id === id ? { ...c, needs_human: false } : c)));
+    try {
+      await api(`/api/conversations/${id}`, { method: "PATCH", body: { resolve: true } });
+    } catch (e) {
+      setError(`Couldn't mark this as handled: ${errorMessage(e)}`);
+      scheduleRefresh();
+    }
+  }
+
   async function signOut() {
     try {
       await fetch("/api/auth/logout", { method: "POST" });
@@ -232,6 +243,7 @@ export default function Dashboard() {
           onModeChange={(mode) => changeMode(selected.id, mode)}
           onSend={(text) => sendMessage(selected.id, text)}
           onDiscardDraft={() => discardDraft(selected.id)}
+          onResolve={() => resolveHandover(selected.id)}
           className="flex-1"
         />
       ) : (

@@ -194,8 +194,9 @@ export async function saveMessage({
 
 /**
  * Records what the model understood: the conversation keeps the latest reading for the inbox,
- * and each analysed message keeps its own for quality reporting. A hand-over flag is only ever
- * raised here, never cleared, so an operator stays in control once involved.
+ * and each analysed message keeps its own for quality reporting. Whether a person is needed is
+ * not decided here — see `escalateIfNeeded`, which reads the previous confidence from the row
+ * this function is about to overwrite.
  */
 export async function applyAnalysis(
   conversationId: string,
@@ -212,13 +213,6 @@ export async function applyAnalysis(
       sentiment: analysis.sentiment,
       urgency: analysis.urgency,
       ai_confidence: analysis.confidence,
-      ...(analysis.needsHuman
-        ? {
-            needs_human: true,
-            escalation_reason: analysis.escalationReason ?? "The assistant asked for a person",
-            escalated_at: new Date().toISOString(),
-          }
-        : {}),
     })
     .eq("id", conversationId);
   if (error) console.error("Failed to record conversation analysis:", error.message);
@@ -261,4 +255,22 @@ export async function escalateConversation(
     return;
   }
   await notifyDashboard(conversationId);
+}
+
+/**
+ * Closes a hand-over once a person has dealt with it. The reason and summary stay on the
+ * record so the history of what happened is not lost, and resolving is what marks the
+ * conversation as handled for reporting.
+ */
+export async function resolveConversation(conversationId: string): Promise<Conversation | null> {
+  const { data, error } = await getSupabase()
+    .from("conversations")
+    .update({ needs_human: false, resolved_at: new Date().toISOString() })
+    .eq("id", conversationId)
+    .select()
+    .maybeSingle();
+  if (error) throw new Error(`Failed to resolve conversation: ${error.message}`);
+
+  if (data) await notifyDashboard(conversationId);
+  return data;
 }

@@ -3,14 +3,16 @@ import { generateReply } from "@/lib/ai";
 import { getCustomer } from "@/lib/customers";
 import {
   applyAnalysis,
-  escalateConversation,
   getConversation,
   getRecentMessages,
   saveDraft,
   saveMessage,
+  updateConversation,
   updateMessageStatus,
   upsertConversation,
 } from "@/lib/conversations";
+import { escalateIfNeeded } from "@/lib/handoff";
+import { getOrganization } from "@/lib/organization";
 import { parseStatusUpdates, parseWebhookPayload, verifySignature, type WebhookPayload } from "@/lib/webhook";
 import { sendWhatsAppMessage } from "@/lib/whatsapp";
 import { toWhatsAppFormat } from "@/lib/whatsapp-text";
@@ -110,14 +112,27 @@ async function prepareReply(conversationId: string, phone: string) {
     if (completion.knowledgeMiss) {
       console.warn(`[webhook] No knowledge matched the question in conversation ${conversationId}`);
     }
+    const handedOver = completion.toolsUsed.find((outcome) => outcome.tool === "handoff_to_human" && outcome.ok);
+
+    // Decided before the analysis is stored, so the previous reply's confidence is still readable
+    const handoff = conversation
+      ? await escalateIfNeeded({
+          organization: await getOrganization(),
+          conversation,
+          customer,
+          analysis: completion.analysis,
+          knowledgeMiss: completion.knowledgeMiss,
+          toolFailed: completion.toolFailed,
+          handedOff: Boolean(handedOver),
+          handoffReason: handedOver?.detail ?? null,
+          history,
+          reply,
+        })
+      : null;
+
     if (completion.analysis) {
       const trigger = [...history].reverse().find((message) => message.role === "user");
       await applyAnalysis(conversationId, trigger?.id ?? null, completion.analysis);
-    }
-    // An action the assistant could not complete is always a person's problem
-    if (completion.toolFailed) {
-      const failure = completion.toolsUsed.find((outcome) => !outcome.ok);
-      await escalateConversation(conversationId, `Could not ${failure?.tool ?? "complete an action"}: ${failure?.error ?? "unknown error"}`, null);
     }
 
     // The operator may have changed the mode while the model was generating
@@ -137,6 +152,9 @@ async function prepareReply(conversationId: string, phone: string) {
       whatsappMsgId,
       status: "sent",
     });
+
+    // Only now: the customer has been told a colleague is taking over, so the assistant stops
+    if (handoff?.pauseAi) await updateConversation(conversationId, { mode: "human" });
   } catch (error) {
     console.error(`[webhook] Failed to prepare AI reply for conversation ${conversationId}:`, error);
   }
