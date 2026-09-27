@@ -1,6 +1,19 @@
+"use client";
+
+import { useMemo, useState } from "react";
 import { Avatar } from "@/components/Avatar";
 import { MODE_STYLES } from "@/components/mode";
-import { formatListTimestamp } from "@/lib/format";
+import { formatListTimestamp, formatWaiting } from "@/lib/format";
+import {
+  countByFilter,
+  filterConversations,
+  INBOX_FILTERS,
+  INBOX_SORTS,
+  sortConversations,
+  waitingFor,
+  type InboxFilterId,
+  type InboxSortId,
+} from "@/lib/inbox";
 import type { ConversationWithLastMessage } from "@/lib/types";
 
 export type RealtimeStatus = "connecting" | "live" | "offline";
@@ -43,6 +56,15 @@ export function ConversationList({
   className = "",
 }: ConversationListProps) {
   const realtime = REALTIME_INDICATOR[realtimeStatus];
+  const [filter, setFilter] = useState<InboxFilterId>("all");
+  const [sort, setSort] = useState<InboxSortId>("recent");
+  const [search, setSearch] = useState("");
+
+  const counts = useMemo(() => countByFilter(conversations), [conversations]);
+  const visible = useMemo(
+    () => sortConversations(filterConversations(conversations, filter, search), sort),
+    [conversations, filter, search, sort]
+  );
 
   return (
     // `className` sets the display (e.g. "flex" or "hidden md:flex") so the parent controls visibility
@@ -56,7 +78,9 @@ export function ConversationList({
         <div className="min-w-0 flex-1">
           <h1 className="text-sm leading-tight font-semibold text-white">WhatsApp AI Agent</h1>
           <p className="mt-0.5 text-xs leading-tight text-white/40">
-            {conversations.length} conversation{conversations.length === 1 ? "" : "s"}
+            {visible.length === conversations.length
+              ? `${conversations.length} conversation${conversations.length === 1 ? "" : "s"}`
+              : `${visible.length} of ${conversations.length}`}
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
@@ -98,21 +122,80 @@ export function ConversationList({
         <span className={`text-xs font-medium ${resultsActive ? "text-white" : "text-white/70"}`}>Results</span>
       </button>
 
+      <div className="space-y-2 border-b border-white/[0.06] px-3 py-2.5">
+        <div className="flex gap-2">
+          <input
+            type="search"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search name, number or message"
+            aria-label="Search conversations"
+            className="min-w-0 flex-1 rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-xs text-white placeholder:text-white/30 focus:border-white/25 focus:outline-none"
+          />
+          <select
+            value={sort}
+            onChange={(event) => setSort(event.target.value as InboxSortId)}
+            aria-label="Sort conversations"
+            className="shrink-0 rounded-lg border border-white/10 bg-white/[0.04] px-2 py-1.5 text-xs text-white/70 focus:border-white/25 focus:outline-none"
+          >
+            {INBOX_SORTS.map((option) => (
+              <option key={option.id} value={option.id} className="bg-[#141414]">
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div role="group" aria-label="Filter conversations" className="flex gap-1.5 overflow-x-auto pb-0.5">
+          {INBOX_FILTERS.map((option) => {
+            const active = option.id === filter;
+            return (
+              <button
+                key={option.id}
+                type="button"
+                title={option.hint}
+                aria-pressed={active}
+                onClick={() => setFilter(option.id)}
+                className={`flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                  active ? "bg-white/[0.12] text-white" : "text-white/45 hover:bg-white/[0.06] hover:text-white/70"
+                }`}
+              >
+                {option.label}
+                <span className={active ? "text-white/60" : "text-white/30"}>{counts[option.id]}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       <nav aria-label="Conversations" className="flex-1 overflow-y-auto">
-        {conversations.length === 0 ? (
+        {visible.length === 0 ? (
           <div className="px-6 py-12 text-center">
             {loading ? (
               <p className="text-xs text-white/30">Loading conversations…</p>
-            ) : (
+            ) : conversations.length === 0 ? (
               <>
                 <p className="text-sm text-white/40">No conversations yet</p>
                 <p className="mt-1 text-xs text-white/25">Messages sent to your WhatsApp number will appear here.</p>
+              </>
+            ) : (
+              <>
+                <p className="text-sm text-white/40">Nothing here</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFilter("all");
+                    setSearch("");
+                  }}
+                  className="mt-1 text-xs text-white/40 underline underline-offset-2 hover:text-white/70"
+                >
+                  Clear the filter and search
+                </button>
               </>
             )}
           </div>
         ) : (
           <ul>
-            {conversations.map((conversation) => (
+            {visible.map((conversation) => (
               <li key={conversation.id}>
                 <ConversationItem
                   conversation={conversation}
@@ -134,10 +217,16 @@ interface ConversationItemProps {
   onSelect: (id: string) => void;
 }
 
+/** Below this, how long a customer has been waiting is not worth the operator's attention. */
+const WAITING_WORTH_SHOWING_MS = 30 * 60_000;
+
+const WAITING_TOO_LONG_MS = 4 * 60 * 60_000;
+
 function ConversationItem({ conversation, selected, onSelect }: ConversationItemProps) {
   const unread = !selected && isUnread(conversation);
   const mode = MODE_STYLES[conversation.mode];
   const last = conversation.last_message;
+  const waited = waitingFor(conversation);
 
   return (
     <button
@@ -164,6 +253,14 @@ function ConversationItem({ conversation, selected, onSelect }: ConversationItem
             {last?.content ?? "No messages yet"}
           </p>
           <div className="flex shrink-0 items-center gap-1.5">
+            {waited !== null && waited >= WAITING_WORTH_SHOWING_MS && (
+              <span
+                className={`text-[10px] ${waited >= WAITING_TOO_LONG_MS ? "font-medium text-orange-300" : "text-white/35"}`}
+                title="How long the customer has been waiting for a reply"
+              >
+                waited {formatWaiting(waited)}
+              </span>
+            )}
             {conversation.needs_human && (
               <span
                 className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-medium tracking-wide text-amber-300 uppercase"

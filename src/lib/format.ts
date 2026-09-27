@@ -19,6 +19,14 @@ export function formatListTimestamp(iso: string): string {
   return date.toLocaleDateString([], { day: "numeric", month: "short", year: sameYear ? undefined : "numeric" });
 }
 
+/** How long someone has been waiting, at a glance: "45m", "3h", "2d". */
+export function formatWaiting(ms: number): string {
+  const minutes = Math.floor(ms / 60_000);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  return hours < 24 ? `${hours}h` : `${Math.floor(hours / 24)}d`;
+}
+
 /** Label for the divider between messages sent on different days. */
 export function formatDayLabel(iso: string): string {
   const date = new Date(iso);

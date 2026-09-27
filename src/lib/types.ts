@@ -95,10 +95,12 @@ export interface Message {
   created_at: string;
 }
 
-export type LastMessage = Pick<Message, "content" | "role" | "created_at">;
+export type LastMessage = Pick<Message, "content" | "role" | "sent_by" | "created_at">;
 
 export interface ConversationWithLastMessage extends Conversation {
   last_message: LastMessage | null;
+  /** From the linked customer record, for filtering the inbox */
+  customer_status: CustomerStatus | null;
 }
 
 export interface Note {

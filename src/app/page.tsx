@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ChatPanel } from "@/components/ChatPanel";
 import { ConversationList, type RealtimeStatus } from "@/components/ConversationList";
+import { CustomerPanel } from "@/components/CustomerPanel";
 import { ResultsSummary } from "@/components/ResultsSummary";
 import { DASHBOARD_CHANNEL, DASHBOARD_EVENT } from "@/lib/realtime-channel";
 import { getBrowserSupabase, isRealtimeConfigured } from "@/lib/supabase-browser";
@@ -47,6 +48,8 @@ export default function Dashboard() {
   const [error, setError] = useState<string | null>(null);
   /** On phones the results replace the list; on wider screens they always sit beside it */
   const [showResults, setShowResults] = useState(false);
+  /** The customer panel is always there on wide screens, and opens over the chat on narrow ones */
+  const [showContext, setShowContext] = useState(false);
 
   // Latest selection, for callbacks that outlive the render they were created in
   const selectedIdRef = useRef<string | null>(null);
@@ -217,7 +220,7 @@ export default function Dashboard() {
   }
 
   return (
-    <main className="flex h-dvh overflow-hidden">
+    <main className="relative flex h-dvh overflow-hidden">
       <ConversationList
         conversations={conversations}
         loading={loadingConversations}
@@ -234,18 +237,30 @@ export default function Dashboard() {
       />
 
       {selected ? (
-        <ChatPanel
-          key={selected.id}
-          conversation={selected}
-          messages={messages}
-          loading={loadingMessages}
-          onBack={() => setSelectedId(null)}
-          onModeChange={(mode) => changeMode(selected.id, mode)}
-          onSend={(text) => sendMessage(selected.id, text)}
-          onDiscardDraft={() => discardDraft(selected.id)}
-          onResolve={() => resolveHandover(selected.id)}
-          className="flex-1"
-        />
+        <>
+          <ChatPanel
+            key={selected.id}
+            conversation={selected}
+            messages={messages}
+            loading={loadingMessages}
+            onBack={() => setSelectedId(null)}
+            onModeChange={(mode) => changeMode(selected.id, mode)}
+            onSend={(text) => sendMessage(selected.id, text)}
+            onDiscardDraft={() => discardDraft(selected.id)}
+            onResolve={() => resolveHandover(selected.id)}
+            onToggleContext={() => setShowContext((open) => !open)}
+            className="flex-1"
+          />
+          <CustomerPanel
+            key={`context-${selected.id}`}
+            conversationId={selected.id}
+            reloadKey={messagesReloadKey}
+            onClose={() => setShowContext(false)}
+            className={
+              showContext ? "absolute inset-y-0 right-0 z-10 flex shadow-2xl xl:static xl:shadow-none" : "hidden xl:flex"
+            }
+          />
+        </>
       ) : (
         <ResultsSummary
           onBack={() => setShowResults(false)}

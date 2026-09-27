@@ -53,6 +53,18 @@ export async function getUpcomingAppointments(customerId: string, now = new Date
   return data;
 }
 
+/** Everything in a customer's history, soonest last, for the record shown beside a conversation. */
+export async function listCustomerAppointments(customerId: string, limit = 20): Promise<Appointment[]> {
+  const { data, error } = await getSupabase()
+    .from("appointments")
+    .select("*")
+    .eq("customer_id", customerId)
+    .order("starts_at", { ascending: false })
+    .limit(limit);
+  if (error) throw new Error(`Failed to load appointments: ${error.message}`);
+  return data;
+}
+
 export async function updateAppointment(
   id: string,
   changes: Partial<Pick<Appointment, "starts_at" | "ends_at" | "status" | "notes" | "service">>

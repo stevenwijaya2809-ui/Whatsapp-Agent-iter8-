@@ -25,6 +25,8 @@ interface ChatPanelProps {
   onDiscardDraft: () => void;
   /** Closes a hand-over once the operator has dealt with it */
   onResolve: () => void;
+  /** Opens the customer panel on screens too narrow to keep it open */
+  onToggleContext: () => void;
   className?: string;
 }
 
@@ -37,6 +39,7 @@ export function ChatPanel({
   onSend,
   onDiscardDraft,
   onResolve,
+  onToggleContext,
   className = "",
 }: ChatPanelProps) {
   const mode = MODE_STYLES[conversation.mode];
@@ -95,6 +98,18 @@ export function ChatPanel({
           </div>
         </div>
         <ModeToggle mode={conversation.mode} onChange={onModeChange} />
+        <button
+          type="button"
+          onClick={onToggleContext}
+          aria-label="Customer details"
+          title="Customer details"
+          className="rounded-lg p-1.5 text-white/50 transition-colors hover:bg-white/[0.06] hover:text-white xl:hidden"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+            <circle cx="12" cy="7" r="4" />
+          </svg>
+        </button>
       </header>
 
       <div className={`flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 py-1.5 text-[11px] md:px-6 ${mode.hintStyle}`}>

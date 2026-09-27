@@ -7,6 +7,7 @@ import { getSupabase } from "@/lib/supabase";
 import type {
   Conversation,
   ConversationWithLastMessage,
+  CustomerStatus,
   LastMessage,
   Message,
   MessageRole,
@@ -30,15 +31,16 @@ export function isUuid(value: string): boolean {
 export async function listConversations(): Promise<ConversationWithLastMessage[]> {
   const { data, error } = await getSupabase()
     .from("conversations")
-    .select("*, messages(content, role, created_at)")
+    .select("*, messages(content, role, sent_by, created_at), customers(status)")
     .order("updated_at", { ascending: false, nullsFirst: false })
     .order("created_at", { referencedTable: "messages", ascending: false })
     .limit(1, { referencedTable: "messages" });
   if (error) throw new Error(`Failed to load conversations: ${error.message}`);
 
-  return data.map(({ messages, ...conversation }) => ({
+  return data.map(({ messages, customers, ...conversation }) => ({
     ...(conversation as Conversation),
     last_message: (messages as LastMessage[])[0] ?? null,
+    customer_status: (customers as { status: CustomerStatus } | null)?.status ?? null,
   }));
 }
 
@@ -142,6 +144,16 @@ export async function getRecentMessages(conversationId: string, limit: number): 
     .limit(limit);
   if (error) throw new Error(`Failed to load messages: ${error.message}`);
   return data.reverse();
+}
+
+/** How many messages a conversation holds, for the summary beside it. */
+export async function countMessages(conversationId: string): Promise<number> {
+  const { count, error } = await getSupabase()
+    .from("messages")
+    .select("id", { count: "exact", head: true })
+    .eq("conversation_id", conversationId);
+  if (error) throw new Error(`Failed to count messages: ${error.message}`);
+  return count ?? 0;
 }
 
 interface NewMessage {
