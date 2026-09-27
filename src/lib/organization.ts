@@ -19,6 +19,7 @@ export interface AiSettings {
   /** Below this, a reply is treated as uncertain and escalated */
   confidenceThreshold?: number;
   escalateOnComplaint?: boolean;
+  /** Seeded but not yet enforced: the assistant answers at any hour. See docs/CHANGELOG_AI_UPGRADE.md */
   afterHoursReply?: boolean;
 }
 
