@@ -106,7 +106,6 @@ export function InboxToolbar({ filter, sort, search, counts, onFilterChange, onS
 
         <Menu
           label={activeSort.short}
-          align="right"
           title="Sort conversations"
           selectedId={sort}
           onSelect={(id) => onSortChange(id as InboxSortId)}
@@ -192,11 +191,10 @@ interface MenuProps {
   onSelect: (id: string) => void;
   badge?: number;
   active?: boolean;
-  align?: "left" | "right";
 }
 
 /** A button that says what is currently applied, and opens the alternatives beneath it. */
-function Menu({ label, icon, title, options, selectedId, onSelect, badge, active = false, align = "left" }: MenuProps) {
+function Menu({ label, icon, title, options, selectedId, onSelect, badge, active = false }: MenuProps) {
   const [open, setOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -263,9 +261,8 @@ function Menu({ label, icon, title, options, selectedId, onSelect, badge, active
           id={menuId}
           role="menu"
           aria-label={title}
-          className={`absolute top-full z-20 mt-1 w-56 overflow-hidden rounded-lg border border-white/10 bg-[#1c1c1c] py-1 shadow-xl shadow-black/40 ${
-            align === "right" ? "right-0" : "left-0"
-          }`}
+          // Anchored to the button's left edge and never wider than the rail it lives in
+          className="absolute top-full left-0 z-20 mt-1 max-w-[calc(100vw-1.5rem)] min-w-52 overflow-hidden rounded-lg border border-white/10 bg-[#1c1c1c] py-1 shadow-xl shadow-black/40"
         >
           {options.map((option) => {
             const selected = option.id === selectedId;
