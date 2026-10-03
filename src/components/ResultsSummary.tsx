@@ -129,7 +129,7 @@ export function ResultsSummary({ onBack, className = "" }: ResultsSummaryProps) 
                 label="Awaiting your reply"
                 value={formatNumber(stats.awaitingReply)}
                 dot={stats.awaitingReply > 0 ? "bg-amber-400" : undefined}
-                hint={`Conversations in these ${stats.days} days where the customer sent the last message. The inbox's "Waiting on us" counts the same thing across every conversation.`}
+                hint={`Conversations in these ${stats.days} days where the customer sent the last message. In the inbox that same set is split in two, by whether the assistant handed it over: "Needs a person" plus "Unanswered".`}
               />
             </div>
 

@@ -38,6 +38,7 @@ describe("inbox filters", () => {
   const list = [
     conversation({ id: "answered" }),
     conversation({ id: "escalated", needs_human: true, last_message: message("assistant", 5, "ai") }),
+    conversation({ id: "escalated-and-asked-again", needs_human: true, last_message: message("user", 2) }),
     conversation({ id: "asked", last_message: message("user", 3) }),
     conversation({ id: "booking", intent: "BOOKING" }),
     conversation({ id: "cancelling", intent: "CANCELLATION" }),
@@ -55,12 +56,17 @@ describe("inbox filters", () => {
   });
 
   it("finds the conversations a person has to deal with", () => {
-    expect(ids("needs_person")).toEqual(["escalated"]);
+    expect(ids("needs_person")).toEqual(["escalated", "escalated-and-asked-again"]);
   });
 
-  it("counts only an unanswered customer as waiting on us", () => {
-    // Matches the results page's "Awaiting your reply", so the two numbers can be compared
+  it("counts an unanswered customer, unless it has already been handed over", () => {
+    // A hand-over the customer then chases is still one job, not two
     expect(ids("waiting")).toEqual(["asked"]);
+  });
+
+  it("never puts the same conversation in both queues of work", () => {
+    const handedOver = new Set(ids("needs_person"));
+    expect(ids("waiting").filter((id) => handedOver.has(id))).toEqual([]);
   });
 
   it("keeps replies that only need approving in their own queue", () => {
@@ -107,7 +113,7 @@ describe("inbox filters", () => {
   it("counts what each filter would show", () => {
     const counts = countByFilter(list);
     expect(counts.all).toBe(list.length);
-    expect(counts.needs_person).toBe(1);
+    expect(counts.needs_person).toBe(2);
     expect(counts.complaints).toBe(2);
     // Every filter is counted, so none can be missing from the interface
     expect(Object.keys(counts).sort()).toEqual(INBOX_FILTERS.map((filter) => filter.id).sort());

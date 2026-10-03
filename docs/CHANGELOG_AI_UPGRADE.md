@@ -85,12 +85,17 @@ as resolved.
 
 ### The inbox and the customer beside the chat (`b0e1626`)
 
-The conversation list answers the questions an operator actually asks: **Needs a person**, **Waiting
-on us**, **Drafts to approve**, **Bookings**, **Complaints**, **New leads**, **AI handled** — each
-with a live count, with search over names, numbers and message text, and sorting by most recent,
-longest waiting or most urgent. "Waiting on us" counts exactly what the results page calls "Awaiting
-your reply" (the customer sent the last message), so the two numbers reconcile; a reply that only
-needs approving is a different job and has its own queue. Conversations left waiting more than half an hour say how long, and turn orange past four.
+The conversation list answers the questions an operator actually asks: **Needs a person**,
+**Unanswered**, **Drafts to approve**, **Bookings**, **Complaints**, **New leads**, **AI handled** —
+each with a live count, with search over names, numbers and message text, and sorting by most
+recent, longest waiting or most urgent.
+
+The three queues of work are deliberately disjoint, so nothing is counted twice: a conversation the
+assistant handed over is in **Needs a person** (with its reason and briefing); one nobody has
+replied to and nobody flagged is **Unanswered** — which is what catches the assistant failing
+silently, such as the free model's daily cap running out; and a reply already written and waiting
+for approval is **Drafts to approve**. Together the first two are what the results page counts as
+"Awaiting your reply" for its period. Conversations left waiting more than half an hour say how long, and turn orange past four.
 
 A panel beside the chat shows the customer: status, tags, first contact, message count, upcoming and
 past appointments, and notes — plus the three things an operator does from there (set the status,

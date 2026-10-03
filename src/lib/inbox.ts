@@ -33,11 +33,12 @@ export const INBOX_FILTERS: InboxFilter[] = [
     matches: (conversation) => conversation.needs_human,
   },
   {
-    // The same measure as "Awaiting your reply" on the results page, so the two numbers agree
+    // Excludes the hand-overs above, so a conversation is never work in two places at once.
+    // Catches the assistant failing silently, where nothing is flagged and nobody notices.
     id: "waiting",
-    label: "Waiting on us",
-    hint: "The customer sent the last message and nobody has replied",
-    matches: (conversation) => conversation.last_message?.role === "user",
+    label: "Unanswered",
+    hint: "Nobody has replied to the customer's last message, and it has not been handed over",
+    matches: (conversation) => conversation.last_message?.role === "user" && !conversation.needs_human,
   },
   {
     id: "drafts",
