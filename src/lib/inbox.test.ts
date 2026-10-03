@@ -58,8 +58,13 @@ describe("inbox filters", () => {
     expect(ids("needs_person")).toEqual(["escalated"]);
   });
 
-  it("counts a pending draft as waiting on us, as well as an unanswered customer", () => {
-    expect(ids("waiting")).toEqual(["asked", "draft"]);
+  it("counts only an unanswered customer as waiting on us", () => {
+    // Matches the results page's "Awaiting your reply", so the two numbers can be compared
+    expect(ids("waiting")).toEqual(["asked"]);
+  });
+
+  it("keeps replies that only need approving in their own queue", () => {
+    expect(ids("drafts")).toEqual(["draft"]);
   });
 
   it("groups the appointment intents together", () => {

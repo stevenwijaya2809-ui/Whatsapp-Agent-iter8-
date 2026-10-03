@@ -5,7 +5,15 @@ const BOOKING_INTENTS = new Set(["BOOKING", "RESCHEDULE", "CANCELLATION"]);
 
 const LEAD_STATUSES = new Set(["NEW", "LEAD", "QUALIFIED"]);
 
-export type InboxFilterId = "all" | "needs_person" | "waiting" | "bookings" | "complaints" | "leads" | "ai_handled";
+export type InboxFilterId =
+  | "all"
+  | "needs_person"
+  | "waiting"
+  | "drafts"
+  | "bookings"
+  | "complaints"
+  | "leads"
+  | "ai_handled";
 
 export interface InboxFilter {
   id: InboxFilterId;
@@ -25,11 +33,17 @@ export const INBOX_FILTERS: InboxFilter[] = [
     matches: (conversation) => conversation.needs_human,
   },
   {
+    // The same measure as "Awaiting your reply" on the results page, so the two numbers agree
     id: "waiting",
     label: "Waiting on us",
-    hint: "The customer wrote last, or a suggested reply is waiting for approval",
-    matches: (conversation) =>
-      conversation.last_message?.role === "user" || Boolean(conversation.draft_reply),
+    hint: "The customer sent the last message and nobody has replied",
+    matches: (conversation) => conversation.last_message?.role === "user",
+  },
+  {
+    id: "drafts",
+    label: "Drafts to approve",
+    hint: "The assistant has written a reply that is waiting for your approval",
+    matches: (conversation) => Boolean(conversation.draft_reply),
   },
   {
     id: "bookings",

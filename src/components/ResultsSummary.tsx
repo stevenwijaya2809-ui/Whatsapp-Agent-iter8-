@@ -98,15 +98,38 @@ export function ResultsSummary({ onBack, className = "" }: ResultsSummaryProps) 
             </p>
 
             <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3">
-              <Tile label="Messages received" value={formatNumber(stats.customerMessages)} />
-              <Tile label="Handled by AI alone" value={formatNumber(stats.handledByAiOnly)} dot="bg-emerald-400" />
-              <Tile label="Arrived after hours" value={formatNumber(stats.afterHours)} />
-              <Tile label="Replies you sent" value={formatNumber(stats.humanReplies)} dot="bg-orange-400" />
-              <Tile label="Median reply time" value={formatMinutes(stats.medianReplyMinutes)} />
+              <Tile
+                label="Messages received"
+                value={formatNumber(stats.customerMessages)}
+                hint="Messages customers sent in this period"
+              />
+              <Tile
+                label="Handled by AI alone"
+                value={formatNumber(stats.handledByAiOnly)}
+                dot="bg-emerald-400"
+                hint="Conversations the assistant answered without anyone stepping in"
+              />
+              <Tile
+                label="Arrived after hours"
+                value={formatNumber(stats.afterHours)}
+                hint="Customer messages that arrived while the clinic was closed"
+              />
+              <Tile
+                label="Replies you sent"
+                value={formatNumber(stats.humanReplies)}
+                dot="bg-orange-400"
+                hint="Replies written by a person rather than the assistant"
+              />
+              <Tile
+                label="Median reply time"
+                value={formatMinutes(stats.medianReplyMinutes)}
+                hint="Typical wait between a customer writing and getting an answer"
+              />
               <Tile
                 label="Awaiting your reply"
                 value={formatNumber(stats.awaitingReply)}
                 dot={stats.awaitingReply > 0 ? "bg-amber-400" : undefined}
+                hint={`Conversations in these ${stats.days} days where the customer sent the last message. The inbox's "Waiting on us" counts the same thing across every conversation.`}
               />
             </div>
 
@@ -119,9 +142,9 @@ export function ResultsSummary({ onBack, className = "" }: ResultsSummaryProps) 
   );
 }
 
-function Tile({ label, value, dot }: { label: string; value: string; dot?: string }) {
+function Tile({ label, value, dot, hint }: { label: string; value: string; dot?: string; hint?: string }) {
   return (
-    <div className="rounded-xl border border-white/[0.06] bg-white/[0.03] px-4 py-3">
+    <div title={hint} className="rounded-xl border border-white/[0.06] bg-white/[0.03] px-4 py-3">
       <p className="flex items-center gap-1.5 text-[11px] text-white/40">
         {dot && <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${dot}`} aria-hidden />}
         {label}

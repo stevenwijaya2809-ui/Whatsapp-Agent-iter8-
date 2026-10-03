@@ -9,6 +9,7 @@ const counts = (overrides: Partial<Record<InboxFilterId, number>> = {}): Record<
   all: 12,
   needs_person: 0,
   waiting: 3,
+  drafts: 2,
   bookings: 4,
   complaints: 1,
   leads: 2,

@@ -86,9 +86,11 @@ as resolved.
 ### The inbox and the customer beside the chat (`b0e1626`)
 
 The conversation list answers the questions an operator actually asks: **Needs a person**, **Waiting
-on us**, **Bookings**, **Complaints**, **New leads**, **AI handled** — each with a live count, with
-search over names, numbers and message text, and sorting by most recent, longest waiting or most
-urgent. Conversations left waiting more than half an hour say how long, and turn orange past four.
+on us**, **Drafts to approve**, **Bookings**, **Complaints**, **New leads**, **AI handled** — each
+with a live count, with search over names, numbers and message text, and sorting by most recent,
+longest waiting or most urgent. "Waiting on us" counts exactly what the results page calls "Awaiting
+your reply" (the customer sent the last message), so the two numbers reconcile; a reply that only
+needs approving is a different job and has its own queue. Conversations left waiting more than half an hour say how long, and turn orange past four.
 
 A panel beside the chat shows the customer: status, tags, first contact, message count, upcoming and
 past appointments, and notes — plus the three things an operator does from there (set the status,
